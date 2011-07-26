@@ -1,0 +1,7 @@
+# dh_python-is-obsolete is overrided because it is false positive.
+#
+# Relevant line in debian/rules looks like 'dh_python$(PYVER_MAJOR) ...'
+# and after variable expansion it turns into dh_python2/dh_python3.
+#
+# Bug http://bugs.debian.org/631662 has been filed.
+uwsgi source: dh_python-is-obsolete line 685

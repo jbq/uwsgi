@@ -1,0 +1,11 @@
+version=3
+
+# Upstream names tarball of:
+# * beta as 'uwsgi-0.9.7-beta1.tar.gz'
+# * RC as 'uwsgi-0.9.7-rc1.tar.gz'
+# * release as 'uwsgi-0.9.7.tar.gz'
+#
+# uversionmangle recipe was found at
+# http://lists.debian.org/debian-devel/2009/12/msg00503.html
+opts="uversionmangle=s/-([a-z]+\d+)$/~$1/" \
+  http://projects.unbit.it/downloads/uwsgi-(\d.+)\.tar\.gz debian uupdate

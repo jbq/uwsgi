@@ -1,0 +1,120 @@
+# This is shell script, (indirectly) sourced by uWSGI init.d script
+
+. /usr/share/uwsgi/init/snippets
+
+# Return:
+#  0 if daemon has been started
+#  1 if daemon was already running
+#  2 if daemon could not be started
+do_start_specific_daemon()
+{
+  local CONFNAME="$@"
+
+  local CONFFILE="$(path_to_conffile_with_name "$CONFNAME")"
+  if [ -z "$CONFFILE" ]; then
+    return 2
+  fi
+
+  local UWSGI_UID="$(extract_id uid "$CONFNAME")"
+  local UWSGI_GID="$(extract_id gid "$CONFNAME")"
+
+  local SPECIFIC_RUNDIR="$(find_specific_rundir "$CONFNAME")"
+  local PIDFILE="$(find_specific_pidfile "$CONFNAME")"
+
+  install -d -o root -g root -m 755 "$UWSGI_RUNDIR"
+  install -d -o "$UWSGI_UID" -g "$UWSGI_GID" -m 755 "$SPECIFIC_RUNDIR"
+
+  start-stop-daemon --start --quiet \
+    --pidfile "$PIDFILE" \
+    --exec "$DAEMON" \
+    --test > /dev/null \
+      || return 1
+
+  local CONFTYPE="$(type_of_conffile "$CONFFILE")"
+  local CONFFILE_OPTION_NAME="$(conffile_option_name "$CONFTYPE")"
+
+  start-stop-daemon --start --quiet \
+    --pidfile "$PIDFILE" \
+    --exec "$DAEMON" \
+      -- --"${CONFFILE_OPTION_NAME}" "${CONFFILE}" \
+         --daemonize "/var/log/uwsgi/${CONFNAME}.log" \
+         --inherit "$INHERITED_CONFIG" \
+    > /dev/null \
+      || return 2
+
+  chown_and_chmod_pidfile "$PIDFILE"
+
+  start-stop-daemon --start --quiet \
+    --pidfile "$PIDFILE" \
+    --exec "$DAEMON" \
+    --test > /dev/null \
+      && return 2
+
+  return 0
+}
+
+# Return:
+#  0 if daemon has been stopped
+#  1 if daemon was already stopped
+#  2 if daemon could not be stopped
+#  other if a failure occurred
+do_stop_specific_daemon()
+{
+  local CONFNAME="$@"
+  local SPECIFIC_RUNDIR="$(find_specific_rundir "$CONFNAME")"
+  local PIDFILE="$(find_specific_pidfile "$CONFNAME")"
+
+  start-stop-daemon --stop --quiet \
+    --retry=QUIT/30/KILL/5 \
+    --pidfile "$PIDFILE" \
+    --name "$NAME"
+
+  RETVAL="$?"
+  [ "$RETVAL" = 2 ] && return 2
+
+  rm -rf "$SPECIFIC_RUNDIR"
+
+  return "$RETVAL"
+}
+
+# Return:
+#  0 if daemon has been reloaded
+#  3 if daemon could not be reloaded
+do_reload_specific_daemon()
+{
+  local CONFNAME="$@"
+  local PIDFILE="$(find_specific_pidfile "$CONFNAME")"
+
+  start-stop-daemon --stop --quiet \
+    --signal=HUP \
+    --pidfile "$PIDFILE" \
+    --name "$NAME"
+
+  RETVAL="$?"
+
+  # There is no such process, nothing to reload!
+  [ "$RETVAL" = 1 ] && RETVAL=3
+
+  return "$RETVAL"
+}
+
+# Return:
+#  0 if daemon has been reloaded
+#  3 if daemon could not be reloaded
+do_force_reload_specific_daemon()
+{
+  local CONFNAME="$@"
+  local PIDFILE="$(find_specific_pidfile "$CONFNAME")"
+
+  start-stop-daemon --stop --quiet \
+    --signal=TERM \
+    --pidfile "$PIDFILE" \
+    --name "$NAME"
+
+  RETVAL="$?"
+
+  # There is no such process, nothing to reload!
+  [ "$RETVAL" = 1 ] && RETVAL=3
+
+  return "$RETVAL"
+}

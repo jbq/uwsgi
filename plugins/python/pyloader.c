@@ -22,39 +22,72 @@ PyMethodDef uwsgi_eventfd_read_method[] = { {"uwsgi_eventfd_read", py_eventfd_re
 PyMethodDef uwsgi_eventfd_write_method[] = { {"uwsgi_eventfd_write", py_eventfd_write, METH_VARARGS, ""}};
 #endif
 
-int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThreadState *interpreter) {
+#ifdef UWSGI_MINTERPRETERS
 
-	PyObject *zero;
+void set_dyn_pyhome(char *home, uint16_t pyhome_len) {
+
+
+	char venv_version[15];
+	PyObject *site_module;
+
+	PyObject *pysys_dict = get_uwsgi_pydict("sys");
+
+	PyObject *pypath = pypath = PyDict_GetItemString(pysys_dict, "path");
+	if (!pypath) {
+		PyErr_Print();
+		exit(1);
+	}
+
+        // simulate a pythonhome directive
+        if (uwsgi.wsgi_req->pyhome_len > 0) {
+
+                PyObject *venv_path = UWSGI_PYFROMSTRINGSIZE(uwsgi.wsgi_req->pyhome, uwsgi.wsgi_req->pyhome_len);
+
+#ifdef UWSGI_DEBUG
+                uwsgi_debug("setting dynamic virtualenv to %.*s\n", uwsgi.wsgi_req->pyhome_len, uwsgi.wsgi_req->pyhome);
+#endif
+
+                PyDict_SetItemString(pysys_dict, "prefix", venv_path);
+                PyDict_SetItemString(pysys_dict, "exec_prefix", venv_path);
+
+                venv_version[14] = 0;
+                if (snprintf(venv_version, 15, "/lib/python%d.%d", PY_MAJOR_VERSION, PY_MINOR_VERSION) == -1) {
+                        return;
+                }
+
+                // check here
+                PyString_Concat(&venv_path, PyString_FromString(venv_version));
+
+                if (PyList_Insert(pypath, 0, venv_path)) {
+                        PyErr_Print();
+                }
+
+                site_module = PyImport_ImportModule("site");
+                if (site_module) {
+                        PyImport_ReloadModule(site_module);
+                }
+
+        }
+}
+
+#endif
+
+
+int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThreadState *interpreter, int app_type) {
+
 	PyObject *app_list = NULL, *applications = NULL;
 
-	int id = uwsgi.apps_cnt;
+	int id = uwsgi_apps_cnt;
 	int multiapp = 0;
 
-#ifdef UWSGI_ASYNC
 	int i;
-#endif
 
 	char *mountpoint;
 
 	struct uwsgi_app *wi;
 
-	if (wsgi_req->script_name_len == 0) {
-		wsgi_req->script_name = "";
-	}
-	else if (wsgi_req->script_name_len == 1) {
-		if (wsgi_req->script_name[0] == '/') {
-			wsgi_req->script_name = "";
-			wsgi_req->script_name_len = 0;
-		}
-	}
 
-
-	if (uwsgi.vhost) {
-		mountpoint = uwsgi_concat3n(wsgi_req->host, wsgi_req->host_len, "|", 1, wsgi_req->script_name, wsgi_req->script_name_len);
-	}
-	else {
-		mountpoint = uwsgi_strncopy(wsgi_req->script_name, wsgi_req->script_name_len);
-	}
+	mountpoint = uwsgi_strncopy(wsgi_req->appid, wsgi_req->appid_len);
 
 	if (uwsgi_get_app_id(mountpoint, strlen(mountpoint), -1) != -1) {
 		uwsgi_log( "mountpoint %.*s already configured. skip.\n", strlen(mountpoint), mountpoint);
@@ -63,7 +96,7 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
 	}
 
 
-	wi = &uwsgi.apps[id];
+	wi = &uwsgi_apps[id];
 
 	memset(wi, 0, sizeof(struct uwsgi_app));
 	wi->mountpoint = mountpoint;
@@ -110,7 +143,9 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
                                 		continue;
                         		}
 	
+#ifdef UWSGI_DEBUG
 					uwsgi_log("%s = %s\n", PyString_AsString(k), PyString_AsString(env_value));
+#endif
 
                         		if (PyObject_SetItem(py_environ, k, env_value)) {
                                 		PyErr_Print();
@@ -125,7 +160,9 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
         	}
 	}
 
+#ifdef UWSGI_MINTERPRETERS
 	if (interpreter == NULL && id) {
+
 		wi->interpreter = Py_NewInterpreter();
 		if (!wi->interpreter) {
 			uwsgi_log( "unable to initialize the new python interpreter\n");
@@ -148,6 +185,13 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
 		wi->interpreter = up.main_thread;
 	}
 
+	if (wsgi_req->pyhome_len) {
+		set_dyn_pyhome(wsgi_req->pyhome, wsgi_req->pyhome_len);
+	}
+#else
+	wi->interpreter = up.main_thread;
+#endif
+
 	if (wsgi_req->touch_reload_len) {
 		struct stat trst;
 		char *touch_reload = uwsgi_strncopy(wsgi_req->touch_reload, wsgi_req->touch_reload_len);
@@ -160,7 +204,7 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
 	wi->callable = up.loaders[loader](arg1);
 
 	if (!wi->callable) {
-		uwsgi_log("unable to load app SCRIPT_NAME=%s\n", mountpoint);
+		uwsgi_log("unable to load app %d (mountpoint='%s') (callable not found or import error)\n", id, mountpoint);
 		goto doh;
 	}
 
@@ -184,11 +228,21 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
 		}
 		wi->mountpoint = PyString_AsString(app_mnt);
 		wi->mountpoint_len = strlen(wi->mountpoint);
-		wsgi_req->script_name = wi->mountpoint;
-		wsgi_req->script_name_len = wi->mountpoint_len;
+		wsgi_req->appid = wi->mountpoint;
+		wsgi_req->appid_len = wi->mountpoint_len;
+#ifdef UWSGI_DEBUG
 		uwsgi_log("main mountpoint = %s\n", wi->mountpoint);
+#endif
 		wi->callable = PyDict_GetItem(applications, app_mnt);
+		if (PyString_Check((PyObject *) wi->callable)) {
+			PyObject *callables_dict = get_uwsgi_pydict((char *)arg1);
+			if (callables_dict) {
+				wi->callable = PyDict_GetItem(callables_dict, (PyObject *)wi->callable);	
+			}
+		}
 	}
+
+	Py_INCREF((PyObject *)wi->callable);
 
 #ifdef UWSGI_ASYNC
 	wi->environ = malloc(sizeof(PyObject*)*uwsgi.cores);
@@ -212,47 +266,29 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
 	}
 #endif
 
-	// check function args
-	// by defaut it is a WSGI app
-	wi->argc = 2;
-	zero = PyObject_GetAttrString(wi->callable, "__code__");
-	if (!zero) {
-		zero = PyObject_GetAttrString(wi->callable, "__call__");
-		if (zero) {
-			zero = PyObject_GetAttrString(wi->callable, "__code__");
-		}
-		else {
-			uwsgi_log("WARNING: unable to get the number of callable args. Fallback to WSGI\n");
-		}
-	}
+	wi->argc = 1;
 
-	// avoid __code__ attr error propagation
-	PyErr_Clear();
-
-	if (zero) {
-		zero = PyObject_GetAttrString(zero, "co_argcount");
-		wi->argc = (int) PyInt_AsLong(zero);
-	}
-
-	if (wi->argc == 2) {
+	if (app_type == PYTHON_APP_TYPE_WSGI) {
 #ifdef UWSGI_DEBUG
-		uwsgi_log("-- WSGI callable detected --\n");
+		uwsgi_log("-- WSGI callable selected --\n");
 #endif
 		wi->request_subhandler = uwsgi_request_subhandler_wsgi;
 		wi->response_subhandler = uwsgi_response_subhandler_wsgi;
+		wi->argc = 2;
 	}
-#ifdef UWSGI_WEB3
-	else if (wi->argc == 1) {
+	else if (app_type == PYTHON_APP_TYPE_WEB3) {
 #ifdef UWSGI_DEBUG
-		uwsgi_log("-- Web3 callable detected --\n");
+		uwsgi_log("-- Web3 callable selected --\n");
 #endif
 		wi->request_subhandler = uwsgi_request_subhandler_web3;
 		wi->response_subhandler = uwsgi_response_subhandler_web3;
 	}
+	else if (app_type == PYTHON_APP_TYPE_PUMP) {
+#ifdef UWSGI_DEBUG
+		uwsgi_log("-- Pump callable selected --\n");
 #endif
-	else {
-		uwsgi_log("-- INVALID callable detected --\n");
-		goto doh;
+		wi->request_subhandler = uwsgi_request_subhandler_pump;
+		wi->response_subhandler = uwsgi_response_subhandler_pump;
 	}
 
 #ifdef UWSGI_ASYNC
@@ -270,7 +306,8 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
 		}
 
 		// add start_response on WSGI app
-		if (wi->argc == 2) {
+		Py_INCREF((PyObject *)up.wsgi_spitout);
+		if (app_type == PYTHON_APP_TYPE_WSGI) {
 			if (PyTuple_SetItem(wi->args[i], 1, up.wsgi_spitout)) {
 				uwsgi_log("unable to set start_response in args tuple\n");
 				exit(1);
@@ -279,16 +316,18 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
 	}
 #else
 
-	wi->wsgi_args = PyTuple_New(wi->argc);
-	if (wi->argc == 2) {
-		if (PyTuple_SetItem(wi->wsgi_args, 1, up.wsgi_spitout)) {
+	// add start_response on WSGI app
+	Py_INCREF((PyObject *)up.wsgi_spitout);
+	wi->args = PyTuple_New(wi->argc);
+	if (app_type == PYTHON_APP_TYPE_WSGI) {
+		if (PyTuple_SetItem(wi->args, 1, up.wsgi_spitout)) {
 			uwsgi_log("unable to set start_response in args tuple\n");
 			exit(1);
 		}
 	}
 #endif
 
-	if (wi->argc == 2) {
+	if (app_type == PYTHON_APP_TYPE_WSGI) {
 #ifdef UWSGI_SENDFILE
 		// prepare sendfile() for WSGI app
 		wi->sendfile = PyCFunction_New(uwsgi_sendfile_method, NULL);
@@ -299,6 +338,19 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
 		wi->eventfd_write = PyCFunction_New(uwsgi_eventfd_write_method, NULL);
 #endif
 	}
+
+	// cache most used values
+
+	wi->gateway_version = PyTuple_New(2);
+        PyTuple_SetItem(wi->gateway_version, 0, PyInt_FromLong(1));
+        PyTuple_SetItem(wi->gateway_version, 1, PyInt_FromLong(0));
+	Py_INCREF((PyObject *)wi->gateway_version);
+
+	wi->uwsgi_version = PyString_FromString(UWSGI_VERSION);
+	Py_INCREF((PyObject *)wi->uwsgi_version);
+
+	wi->uwsgi_node = PyString_FromString(uwsgi.hostname);
+	Py_INCREF((PyObject *)wi->uwsgi_node);
 
 	if (uwsgi.threads > 1 && id) {
 		// if we have multiple threads we need to initialize a PyThreadState for each one
@@ -316,21 +368,25 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
 		PyThreadState_Swap(up.main_thread);
 	}
 
-	if (wi->argc == 1) {
-		uwsgi_log( "Web3 application %d (SCRIPT_NAME=%.*s) ready on interpreter %p", id, wi->mountpoint_len, wi->mountpoint, wi->interpreter);
-	}
-	else {
-		uwsgi_log( "WSGI application %d (SCRIPT_NAME=%.*s) ready on interpreter %p pid: %d", id, wi->mountpoint_len, wi->mountpoint, wi->interpreter, (int) getpid());
-	}
+	const char *default_app = "";
 
-	if (!wsgi_req->script_name_len) {
-		uwsgi_rawlog(" (default app)");
+	if ((wsgi_req->appid_len == 0 || (wsgi_req->appid_len = 1 && wsgi_req->appid[0] == '/')) && uwsgi.default_app == -1) {
+		default_app = " (default app)" ;
 		uwsgi.default_app = id;
 	}
 
-	uwsgi.apps_cnt++;
+	if (app_type == PYTHON_APP_TYPE_WSGI) {
+		uwsgi_log( "WSGI application %d (mountpoint='%.*s') ready on interpreter %p pid: %d%s\n", id, wi->mountpoint_len, wi->mountpoint, wi->interpreter, (int) getpid(), default_app);
+	}
+	else if (app_type == PYTHON_APP_TYPE_WEB3) {
+		uwsgi_log( "Web3 application %d (mountpoint='%.*s') ready on interpreter %p pid: %d%s\n", id, wi->mountpoint_len, wi->mountpoint, wi->interpreter, (int) getpid(), default_app);
+	}
+	else if (app_type == PYTHON_APP_TYPE_PUMP) {
+		uwsgi_log( "Pump application %d (mountpoint='%.*s') ready on interpreter %p pid: %d%s\n", id, wi->mountpoint_len, wi->mountpoint, wi->interpreter, (int) getpid(), default_app);
+	}
 
-	uwsgi_rawlog("\n");
+
+	uwsgi_apps_cnt++;
 
 	if (multiapp > 1) {
 		for(i=1;i<multiapp;i++) {
@@ -340,9 +396,29 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
 				continue;
 			}
 
-			wsgi_req->script_name = PyString_AsString(app_mnt);
-			wsgi_req->script_name_len = strlen(wsgi_req->script_name);
-			init_uwsgi_app(LOADER_CALLABLE, PyDict_GetItem(applications, app_mnt), wsgi_req, wi->interpreter);
+			wsgi_req->appid = PyString_AsString(app_mnt);
+			wsgi_req->appid_len = strlen(wsgi_req->appid);
+			PyObject *a_callable = PyDict_GetItem(applications, app_mnt);
+			if (PyString_Check(a_callable)) {
+
+				PyObject *callables_dict = get_uwsgi_pydict((char *)arg1);
+				if (callables_dict) {
+					a_callable = PyDict_GetItem(callables_dict, a_callable);
+				}
+			}
+			if (!a_callable) {
+				uwsgi_log("skipping broken app %s\n", wsgi_req->appid);
+				continue;
+			}
+			init_uwsgi_app(LOADER_CALLABLE, a_callable, wsgi_req, wi->interpreter, app_type);
+		}
+	}
+
+	// check if we need to emulate fork() COW
+	if (uwsgi.mywid == 0) {
+		for(i=1;i<=uwsgi.numproc;i++) {
+			memcpy(&uwsgi.workers[i].apps[id], &uwsgi.workers[0].apps[id], sizeof(struct uwsgi_app));
+			uwsgi.workers[i].apps_cnt = uwsgi_apps_cnt;
 		}
 	}
 
@@ -351,6 +427,7 @@ int init_uwsgi_app(int loader, void *arg1, struct wsgi_request *wsgi_req, PyThre
 doh:
 	free(mountpoint);
 	PyErr_Print();
+#ifdef UWSGI_MINTERPRETERS
 	if (interpreter == NULL && id) {
 		Py_EndInterpreter(wi->interpreter);
 		if (uwsgi.threads > 1) {
@@ -360,6 +437,7 @@ doh:
 			PyThreadState_Swap(up.main_thread);
 		}
 	}
+#endif
 	return -1;
 }
 
@@ -404,7 +482,9 @@ PyObject *uwsgi_uwsgi_loader(void *arg1) {
 
 	PyObject *tmp_callable;
 	PyObject *applications;
+#ifndef UWSGI_PYPY
 	PyObject *uwsgi_dict = get_uwsgi_pydict("uwsgi");
+#endif
 
 	char *module = (char *) arg1;
 
@@ -427,8 +507,10 @@ PyObject *uwsgi_uwsgi_loader(void *arg1) {
 		return NULL;
 	}
 
+#ifndef UWSGI_PYPY
 	applications = PyDict_GetItemString(uwsgi_dict, "applications");
 	if (applications && PyDict_Check(applications)) return applications;
+#endif
 
 
 	applications = PyDict_GetItemString(wsgi_dict, "applications");
@@ -441,7 +523,7 @@ PyObject *uwsgi_uwsgi_loader(void *arg1) {
 		tmp_callable = PyDict_GetItemString(wsgi_dict, quick_callable);
 		quick_callable[strlen(quick_callable)] = '(';
 		if (tmp_callable) {
-			return python_call(tmp_callable, PyTuple_New(0), 0);
+			return python_call(tmp_callable, PyTuple_New(0), 0, NULL);
 		}
 	}
 
@@ -457,6 +539,7 @@ PyObject *uwsgi_mount_loader(void *arg1) {
 
 	if ( !strcmp(what+strlen(what)-3, ".py") || !strcmp(what+strlen(what)-5, ".wsgi")) {
 		callable = uwsgi_file_loader((void *)what);
+		if (!callable) exit(1);
 	}
 	else if (!strcmp(what+strlen(what)-4, ".ini")) {
 		callable = uwsgi_paste_loader((void *)what);
@@ -523,29 +606,43 @@ PyObject *uwsgi_file_loader(void *arg1) {
 	char *callable = up.callable;
 	if (!callable) callable = "application";
 
-	wsgi_file_module = uwsgi_pyimport_by_filename("uwsgi_wsgi_file", filename);
+	char *py_filename = uwsgi_concat2("uwsgi_file_", uwsgi_pythonize(filename));
+
+	wsgi_file_module = uwsgi_pyimport_by_filename(py_filename, filename);
 	if (!wsgi_file_module) {
 		PyErr_Print();
-		exit(1);
+		free(py_filename);
+		return NULL;
 	}
 
 	wsgi_file_dict = PyModule_GetDict(wsgi_file_module);
 	if (!wsgi_file_dict) {
 		PyErr_Print();
-		exit(1);
+		Py_DECREF(wsgi_file_module);
+		free(py_filename);
+		return NULL;
 	}
 
 	wsgi_file_callable = PyDict_GetItemString(wsgi_file_dict, callable);
 	if (!wsgi_file_callable) {
 		PyErr_Print();
+		Py_DECREF(wsgi_file_dict);
+		Py_DECREF(wsgi_file_module);
+                free(py_filename);
 		uwsgi_log( "unable to find \"application\" callable in file %s\n", filename);
-		exit(1);
+		return NULL;
 	}
 
 	if (!PyFunction_Check(wsgi_file_callable) && !PyCallable_Check(wsgi_file_callable)) {
 		uwsgi_log( "\"application\" must be a callable object in file %s\n", filename);
-		exit(1);
+		Py_DECREF(wsgi_file_callable);
+		Py_DECREF(wsgi_file_dict);
+		Py_DECREF(wsgi_file_module);
+                free(py_filename);
+		return NULL;
 	}
+
+        free(py_filename);
 
 	return wsgi_file_callable;
 
@@ -598,6 +695,8 @@ PyObject *uwsgi_paste_loader(void *arg1) {
 }
 
 PyObject *uwsgi_eval_loader(void *arg1) {
+
+#ifndef UWSGI_PYPY
 
 	char *code = (char *) arg1;
 
@@ -654,6 +753,9 @@ PyObject *uwsgi_eval_loader(void *arg1) {
 	}
 
 	return wsgi_eval_callable;
+#else
+	return NULL;
+#endif
 
 }
 

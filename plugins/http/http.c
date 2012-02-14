@@ -39,6 +39,7 @@ struct uwsgi_http {
 	int server;
 
 	char *subscription_server;
+	int subscription_regexp;
 
 	char *pattern;
 	int pattern_len;
@@ -60,7 +61,7 @@ struct uwsgi_http {
 
 	int socket_timeout;
 
-	struct uwsgi_dict *subscription_dict;
+	struct uwsgi_subscribe_slot *subscriptions;
 
 	struct rb_root *timeouts;
 } uhttp;
@@ -76,6 +77,7 @@ struct option http_options[] = {
 	{"http-use-cluster", no_argument, &uhttp.use_cluster, 1},
 	{"http-events", required_argument, 0, LONG_ARGS_HTTP_EVENTS},
 	{"http-subscription-server", required_argument, 0, LONG_ARGS_HTTP_SUBSCRIPTION_SERVER},
+	{"http-subscription-use-regexp", no_argument, &uhttp.subscription_regexp, 1},
 	{"http-timeout", required_argument, 0, LONG_ARGS_HTTP_TIMEOUT},
 	{0, 0, 0, 0},	
 };
@@ -136,8 +138,10 @@ struct http_session {
 	char uss[MAX_HTTP_VEC*2];
 
 	char buffer[UMAX16];
+	char path_info[UMAX16];
+	uint16_t path_info_len;
 
-	struct uwsgi_subscriber_name *un;
+	struct uwsgi_subscribe_node *un;
 	
 	in_addr_t ip_addr;
 	char ip[INET_ADDRSTRLEN];
@@ -156,9 +160,9 @@ static void close_session(struct http_session **uhttp_table, struct http_session
 	close(uhttp_session->fd);
         uhttp_table[uhttp_session->fd] = NULL;
         if (uhttp_session->instance_fd != -1) {
-        	if (uhttp.subscription_server && (uhttp_session->instance_failed || uhttp_session->status == HTTP_STATUS_CONNECTING)) {
+        	if (uhttp.subscriptions && (uhttp_session->instance_failed || uhttp_session->status == HTTP_STATUS_CONNECTING)) {
                 	uwsgi_log("marking %.*s as failed\n", (int) uhttp_session->instance_address_len,uhttp_session->instance_address);
-                        uhttp_session->un->len = 0;
+			uwsgi_remove_subscribe_node(&uhttp.subscriptions, uhttp_session->un);
                 }
                 close(uhttp_session->instance_fd);
                 uhttp_table[uhttp_session->instance_fd] = NULL;
@@ -325,13 +329,19 @@ int http_parse(struct http_session *h_session) {
 	base = ptr;
 	while(ptr < watermark) {
                 if (*ptr == '?' && !query_string) {
-			h_session->uh.pktsize += http_add_uwsgi_var(h_session->iov, h_session->uss+c, h_session->uss+c+2, "PATH_INFO", 9, base, ptr-base, &c);
+			// PATH_INFO must be url-decoded !!!
+			h_session->path_info_len = ptr-base;
+			http_url_decode(base, &h_session->path_info_len, h_session->path_info);
+			h_session->uh.pktsize += http_add_uwsgi_var(h_session->iov, h_session->uss+c, h_session->uss+c+2, "PATH_INFO", 9, h_session->path_info, h_session->path_info_len, &c);
 			query_string = ptr+1;
 		}
                 else if (*ptr == ' ') {
 			h_session->uh.pktsize += http_add_uwsgi_var(h_session->iov, h_session->uss+c, h_session->uss+c+2, "REQUEST_URI", 11, base, ptr-base, &c);
 			if (!query_string) {
-				h_session->uh.pktsize += http_add_uwsgi_var(h_session->iov, h_session->uss+c, h_session->uss+c+2, "PATH_INFO", 9, base, ptr-base, &c);
+				// PATH_INFO must be url-decoded !!!
+				h_session->path_info_len = ptr-base;
+				http_url_decode(base, &h_session->path_info_len, h_session->path_info);
+				h_session->uh.pktsize += http_add_uwsgi_var(h_session->iov, h_session->uss+c, h_session->uss+c+2, "PATH_INFO", 9, h_session->path_info, h_session->path_info_len, &c);
 				h_session->uh.pktsize += http_add_uwsgi_var(h_session->iov, h_session->uss+c, h_session->uss+c+2, "QUERY_STRING", 12, "", 0, &c);
 			}	
 			else {
@@ -403,6 +413,14 @@ int http_parse(struct http_session *h_session) {
 		ptr++;
 	}
 
+	int i;
+	for(i=0;i<uhttp.http_vars_cnt;i++) {
+		char *equal = strchr(uhttp.http_vars[i],'=');
+		if (equal) {
+			h_session->uh.pktsize += http_add_uwsgi_var(h_session->iov, h_session->uss+c, h_session->uss+c+2, uhttp.http_vars[i], equal-uhttp.http_vars[i], equal+1, strlen(equal+1), &c);
+		}
+	}
+
 #ifdef UWSGI_DEBUG
 	uwsgi_log("vec size: %d pkt size: %d load %d\n", c, h_session->uh.pktsize, uhttp.load);
 #endif
@@ -411,7 +429,7 @@ int http_parse(struct http_session *h_session) {
 	
 }
 
-void http_loop() {
+void http_loop(int id) {
 
 	int uhttp_queue;
 	int uhttp_subserver = -1;
@@ -466,7 +484,6 @@ void http_loop() {
 	if (uhttp.subscription_server) {
 		uhttp_subserver = bind_to_udp(uhttp.subscription_server, 0, 0);
 		event_queue_add_fd_read(uhttp_queue, uhttp_subserver);
-		uhttp.subscription_dict = uwsgi_dict_create(100, 0);
 	}
 
 	if (uhttp.pattern) {
@@ -542,7 +559,7 @@ void http_loop() {
 				if (len > 0) {
 					memset(&usr, 0, sizeof(struct uwsgi_subscribe_req));
 					uwsgi_hooked_parse(bbuf+4, len-4, http_manage_subscription, &usr);
-					uwsgi_add_subscriber(uhttp.subscription_dict, &usr);
+					uwsgi_add_subscribe_node(&uhttp.subscriptions, &usr, uhttp.subscription_regexp);
 				}
 			}
 			else {
@@ -567,7 +584,8 @@ void http_loop() {
 						event_queue_add_fd_read(uhttp_queue, uhttp_session->fd);
 #endif
 						if (len <= 0) {
-							uwsgi_error("recv()");
+							if (len < 0)
+								uwsgi_error("recv()");
 							close_session(uhttp_table, uhttp_session);
 							break;
 						}
@@ -622,7 +640,7 @@ void http_loop() {
 									uhttp_session->instance_address_len = uhttp.to_len;
 								}
 								else if (uhttp.subscription_server) {
-									uhttp_session->un = uwsgi_get_subscriber(uhttp.subscription_dict, uhttp_session->hostname, uhttp_session->hostname_len);
+									uhttp_session->un = uwsgi_get_subscribe_node(&uhttp.subscriptions, uhttp_session->hostname, uhttp_session->hostname_len, uhttp.subscription_regexp);
 									if (uhttp_session->un && uhttp_session->un->len) {
 										uhttp_session->instance_address = uhttp_session->un->name;
 										uhttp_session->instance_address_len = uhttp_session->un->len;
@@ -639,6 +657,7 @@ void http_loop() {
 								}
 
 
+
 								uhttp_session->pass_fd = is_unix(uhttp_session->instance_address, uhttp_session->instance_address_len);
 
 								uhttp_session->instance_fd = uwsgi_connectn(uhttp_session->instance_address, uhttp_session->instance_address_len, 0, 1);
@@ -652,10 +671,7 @@ void http_loop() {
 								}
 
 								if (uhttp_session->instance_fd < 0) {
-									if (uhttp.subscription_server) {
-										uwsgi_log("marking %.*s as failed\n", (int) uhttp_session->instance_address_len,uhttp_session->instance_address);
-										uhttp_session->un->len = 0;
-									}
+									uhttp_session->instance_failed = 1;
 									close_session(uhttp_table, uhttp_session);
                                                                 	break;
                                                         	}
@@ -872,9 +888,14 @@ int http_init() {
 			uwsgi_new_socket(uwsgi_concat2("127.0.0.1:0", ""));
 		}
 
-		uhttp.server = bind_to_tcp(uhttp.socket_name, uwsgi.listen_queue, strchr(uhttp.socket_name,':'));
+		char *port = strchr(uhttp.socket_name,':');
+		if (!port) {
+			uwsgi_log("invalid HTTP ip:port syntax\n");
+			exit(1);
+		}
+		uhttp.server = bind_to_tcp(uhttp.socket_name, uwsgi.listen_queue, port);
 
-		if (register_gateway("http", http_loop) == NULL) {
+		if (register_gateway("uWSGI http", http_loop) == NULL) {
 			uwsgi_log("unable to register the http gateway\n");
 			exit(1);
 		}

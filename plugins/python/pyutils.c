@@ -8,7 +8,7 @@ int manage_python_response(struct wsgi_request *wsgi_req) {
 	return uwsgi_response_subhandler_wsgi(wsgi_req);
 }
 
-PyObject *python_call(PyObject *callable, PyObject *args, int catch) {
+PyObject *python_call(PyObject *callable, PyObject *args, int catch, struct wsgi_request *wsgi_req) {
 
 	PyObject *pyret;
 
@@ -22,7 +22,13 @@ PyObject *python_call(PyObject *callable, PyObject *args, int catch) {
 		if (PyErr_ExceptionMatches(PyExc_MemoryError)) {
 			uwsgi_log("Memory Error detected !!!\n");
 		}
-		uwsgi.workers[uwsgi.mywid].exceptions++;
+		// this can be in a spooler or in the master
+		if (uwsgi.mywid > 0) {
+			uwsgi.workers[uwsgi.mywid].exceptions++;
+			if (wsgi_req) {
+				uwsgi_apps[wsgi_req->app_id].exceptions++;
+			}
+		}
 		if (!catch) {
 			PyErr_Print();
 		}
@@ -39,7 +45,7 @@ PyObject *python_call(PyObject *callable, PyObject *args, int catch) {
 
 int uwsgi_python_call(struct wsgi_request *wsgi_req, PyObject *callable, PyObject *args) {
 
-	wsgi_req->async_result = python_call(callable, args, 0);
+	wsgi_req->async_result = python_call(callable, args, 0, wsgi_req);
 
 	if (wsgi_req->async_result) {
 		while ( manage_python_response(wsgi_req) != UWSGI_OK) {
@@ -66,8 +72,9 @@ void init_pyargv() {
 	up.py_argv[0] = "uwsgi";
 #endif
 
-	if (up.argv != NULL && !up.argc) {
-		up.argc++;
+	up.argc = 1;
+
+	if (up.argv != NULL) {
 #ifdef PYTHREE
 		wchar_t *wcargv = malloc( sizeof( wchar_t ) * (strlen(up.argv)+1));
 		if (!wcargv) {
@@ -98,7 +105,20 @@ void init_pyargv() {
 			}
 		}
 
+#ifndef UWSGI_PYPY
 		PySys_SetArgv(up.argc, up.py_argv);
+#endif
+
+	PyObject *sys_dict = get_uwsgi_pydict("sys");
+	if (!sys_dict) {
+		uwsgi_log("unable to load python sys module !!!\n");
+		exit(1);
+	}
+#ifdef PYTHREE
+	PyDict_SetItemString(sys_dict, "executable", PyUnicode_FromString(uwsgi.binary_path));
+#else
+	PyDict_SetItemString(sys_dict, "executable", PyString_FromString(uwsgi.binary_path));
+#endif
 
 
 }

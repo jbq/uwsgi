@@ -6,8 +6,11 @@
 #define LONG_ARGS_RAILS         LONG_ARGS_RACK_BASE + 1
 #define LONG_ARGS_RUBY_GC_FREQ  LONG_ARGS_RACK_BASE + 2
 #define LONG_ARGS_RACK          LONG_ARGS_RACK_BASE + 3
+#define LONG_ARGS_RUBY_SHELL    LONG_ARGS_RACK_BASE + 4
+#define LONG_ARGS_RUBY_REQUIRE  LONG_ARGS_RACK_BASE + 5
 
 #ifndef RUBY19
+#include <st.h>
         #define rb_errinfo() ruby_errinfo
         #define RUBY_GVL_LOCK
         #define RUBY_GVL_UNLOCK
@@ -51,14 +54,26 @@ struct uwsgi_rack {
         uint64_t cycles;
 
         int call_gc;
+
+	// why why why !!!!????!!!???
+	VALUE signals_protector;
+	VALUE rpc_protector;
+
         VALUE dispatcher;
         VALUE rb_uwsgi_io_class;
         ID call;
         VALUE fibers[200];
-        int unprotected;
 
         pthread_mutex_t gvl;
+
+	int rb_shell;
+	int app_id;
+
+	int unprotected;
+
+	struct uwsgi_string_list *rbrequire;
 
 };
 
 void uwsgi_ruby_exception(void);
+void uwsgi_rack_init_api(void);

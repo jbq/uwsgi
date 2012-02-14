@@ -356,7 +356,11 @@ int uwsgi_proto_zeromq_accept(struct wsgi_request *wsgi_req, int fd) {
 				uwsgi_log("post_size: %d\n", wsgi_req->post_cl);
 #endif
 				wsgi_req->async_post = tmpfile();
-				fwrite(message_ptr, wsgi_req->post_cl, 1, wsgi_req->async_post);
+				if (fwrite(message_ptr, wsgi_req->post_cl, 1, wsgi_req->async_post) != 1) {
+					uwsgi_error("fwrite()");
+					zmq_msg_close(&message);
+					return -1;
+				}
 				rewind(wsgi_req->async_post);
 				wsgi_req->body_as_file = 1;
 			}
@@ -453,7 +457,6 @@ ssize_t uwsgi_proto_zeromq_sendfile(struct wsgi_request * wsgi_req) {
 	size_t remains = wsgi_req->sendfile_fd_size - wsgi_req->sendfile_fd_pos;
 
 	wsgi_req->sendfile_fd_chunk = 65536;
-
 
 	if (uwsgi.async > 1) {
 		len = read(wsgi_req->sendfile_fd, buf, UMIN(remains, wsgi_req->sendfile_fd_chunk));

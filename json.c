@@ -30,7 +30,7 @@ void uwsgi_json_config(char *file, char *magic_table[]) {
 	char *colon;
 	int i;
 
-	if (!uwsgi_startswith(file, "http://", 7)) {
+	if (uwsgi_check_scheme(file)) {
                 colon = uwsgi_get_last_char(file, '/');
                 colon = uwsgi_get_last_char(colon, ':');
         }
@@ -49,7 +49,11 @@ void uwsgi_json_config(char *file, char *magic_table[]) {
 
 	json_data = uwsgi_open_and_read(file, &len, 1, magic_table);
 
+#ifdef JANSSON_MAJOR_VERSION 
 	root = json_loads(json_data, 0, &error);
+#else
+	root = json_loads(json_data, &error);
+#endif
 
 	if (!root) {
 		uwsgi_log("error parsing JSON data: line %d %s\n", error.line, error.text);
@@ -73,10 +77,10 @@ void uwsgi_json_config(char *file, char *magic_table[]) {
 			add_exported_option((char *)key, (char *) json_string_value(config_value), 0);
 		}
 		else if (json_is_true(config_value)) {
-			add_exported_option((char *)key, (char *) "1", 0);
+			add_exported_option((char *)key, strdup("1"), 0);
 		}
 		else if (json_is_false(config_value) || json_is_null(config_value)) {
-			add_exported_option((char *)key, (char *) "0", 0);
+			add_exported_option((char *)key, strdup("0"), 0);
 		}
 		else if (json_is_integer(config_value)) {
 			add_exported_option((char *)key, uwsgi_num2str(json_integer_value(config_value)), 0);
@@ -88,10 +92,10 @@ void uwsgi_json_config(char *file, char *magic_table[]) {
                         		add_exported_option((char *)key, (char *) json_string_value(config_array_item), 0);
                 		}
                 		else if (json_is_true(config_array_item)) {
-                        		add_exported_option((char *)key, (char *) "1", 0);
+                        		add_exported_option((char *)key, strdup("1"), 0);
                 		}
                 		else if (json_is_false(config_array_item) || json_is_null(config_array_item)) {
-                        		add_exported_option((char *)key, (char *) "0", 0);
+                        		add_exported_option((char *)key, strdup("0"), 0);
                 		}
                 		else if (json_is_integer(config_array_item)) {
                         		add_exported_option((char *)key, uwsgi_num2str(json_integer_value(config_array_item)), 0);

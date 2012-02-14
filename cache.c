@@ -6,12 +6,7 @@ void uwsgi_init_cache() {
 	int i;
 
 	if (!uwsgi.cache_blocksize)
-                        uwsgi.cache_blocksize = UMAX16;
-
-                if (uwsgi.cache_blocksize % uwsgi.page_size != 0) {
-                        uwsgi_log("invalid cache blocksize %llu: must be a multiple of memory page size (%d bytes)\n", (unsigned long long) uwsgi.cache_blocksize, uwsgi.page_size);
-                        exit(1);
-                }
+        	uwsgi.cache_blocksize = UMAX16;
 
                 uwsgi.cache_hashtable = (uint64_t *) mmap(NULL, sizeof(uint64_t) * UMAX16, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
                 if (!uwsgi.cache_hashtable) {
@@ -91,152 +86,8 @@ void uwsgi_init_cache() {
                 uwsgi.cache_lock = uwsgi_mmap_shared_rwlock();
                 uwsgi_rwlock_init(uwsgi.cache_lock);
 
-                uwsgi_log("*** Cache subsystem initialized: %dMB preallocated ***\n", ((sizeof(uint64_t) * UMAX16) + (sizeof(uint64_t) * uwsgi.cache_max_items) + (uwsgi.cache_blocksize * uwsgi.cache_max_items) + (sizeof(struct uwsgi_cache_item) * uwsgi.cache_max_items)) / (1024 * 1024));
-}
-
-struct uwsgi_subscriber_name *uwsgi_get_subscriber(struct uwsgi_dict *udict, char *key, uint16_t keylen) {
-
-	uint64_t ovl;
-	struct uwsgi_subscriber *usub;
-	struct uwsgi_subscriber_name *ret = NULL;
-	
-	usub = (struct uwsgi_subscriber *) uwsgi_dict_get(udict, key, keylen, &ovl);
-
-	if (usub == NULL || !ovl) return NULL;
-
-	if (!usub->nodes) return NULL;
-
-	if (usub && ovl) {
-		ret = &usub->names[usub->current];
-		// dead node
-		if (ret->len == 0) {
-			if (usub->current == usub->nodes-1) {
-				usub->nodes--;
-			}
-			// retry with another node (if available)
-			if (usub->nodes > 0) {
-				usub->current++;
-				if (usub->current >= usub->nodes) usub->current = 0;
-				return uwsgi_get_subscriber(udict, key, keylen);
-			}
-		}
-
-		if (usub->nodes > 1) {
-			usub->current++;
-			if (usub->current >= usub->nodes) usub->current = 0;
-		}
-
-	}
-
-	return ret;
-}
-
-void uwsgi_add_subscriber(struct uwsgi_dict *udict, struct uwsgi_subscribe_req *usr) {
-
-	char *ptr;
-	uint64_t vallen = 0;
-	struct uwsgi_subscriber *usub, nusub;
-	int found = 0;
-	int i;
-	
-	ptr = uwsgi_dict_get(udict, usr->key, usr->keylen, &vallen);
-	if (ptr && vallen) {
-		usub = (struct uwsgi_subscriber *) ptr;
-		for(i=0;i<(int)usub->nodes;i++) {
-			if (!uwsgi_strncmp(usub->names[i].name, usub->names[i].len, usr->address, usr->address_len)) {
-				found = 1;
-				break;
-			}
-		}
-		if (!found) {
-			found = usub->nodes;
-			// check for unallocated slot
-			for(i=0;i<(int)usub->nodes;i++) {
-				if (usub->names[i].len == 0) {
-					found = i;
-					break;
-				}
-			}
-			usub->names[found].len = usr->address_len;
-			usub->names[found].modifier1 = usr->modifier1;
-			usub->names[found].modifier2 = usr->modifier2;
-			memcpy(usub->names[found].name, usr->address, usr->address_len);
-			if (found == (int) usub->nodes) {
-				usub->nodes++;
-			}
-		}
-		return;
-	}
-	else {
-		nusub.nodes = 1;
-		nusub.current = 0;
-		memcpy(nusub.names[0].name, usr->address, usr->address_len);
-		nusub.names[0].modifier1 = usr->modifier1;
-		nusub.names[0].modifier2 = usr->modifier2;
-		uwsgi_dict_set(udict, usr->key, usr->keylen, (char *) &nusub, sizeof(struct uwsgi_subscriber));
-	}
-
-}
-
-struct uwsgi_dict *uwsgi_dict_create(uint64_t items, uint64_t blocksize) {
-
-	int i;
-
-	struct uwsgi_dict *udict = (struct uwsgi_dict *) mmap(NULL, sizeof(uint64_t) * UMAX16, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
-	if (!udict) {
-        	uwsgi_error("mmap()");
-                exit(1);
-	}
-
-	if (!blocksize) blocksize = 4096;
-
-        if (blocksize % uwsgi.page_size != 0) {
-        	uwsgi_log("invalid shared dictionary blocksize %llu: must be a multiple of memory page size (%d bytes)\n", (unsigned long long) udict->blocksize, uwsgi.page_size);
-        	exit(1);
-	}
-
-	udict->blocksize = blocksize;
-	udict->max_items = items;
-
-        udict->hashtable = (uint64_t *) mmap(NULL, sizeof(uint64_t) * UMAX16, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
-        if (!udict->hashtable) {
-        	uwsgi_error("mmap()");
-                exit(1);
-	}
-
-        memset(udict->hashtable, 0, sizeof(uint64_t) * UMAX16);
-
-        udict->unused_stack = (uint64_t *) mmap(NULL, sizeof(uint64_t) * udict->max_items, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
-        if (!udict->unused_stack) {
-        	uwsgi_error("mmap()");
-                exit(1);
-	}
-
-        memset(udict->unused_stack, 0, sizeof(uint64_t) * udict->max_items);
-
-        udict->items = (struct uwsgi_dict_item *) mmap(NULL, sizeof(struct uwsgi_dict_item) * udict->max_items, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
-        if (!udict->items) {
-        	uwsgi_error("mmap()");
-                exit(1);
-        }
-
-        udict->data = mmap(NULL, udict->blocksize * udict->max_items, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
-        if (!udict->data) {
-        	uwsgi_error("mmap()");
-                exit(1);
-        }
-
-        for(i=0;i< (int) udict->max_items;i++) {
-        	memset(&udict->items[i], 0, sizeof(struct uwsgi_dict_item));
-        }
-
-        udict->first_available_item = 1;
-        udict->unused_stack_ptr = 0;
-
-        udict->lock = uwsgi_mmap_shared_lock();
-        uwsgi_lock_init(udict->lock);
-
-	return udict;
+                uwsgi_log("*** Cache subsystem initialized: %dMB (key: %llu bytes, keys: %llu bytes, data: %llu bytes) preallocated ***\n", ((uwsgi.cache_blocksize * uwsgi.cache_max_items) + (sizeof(struct uwsgi_cache_item) * uwsgi.cache_max_items)) / (1024 * 1024),
+				 (unsigned long long) sizeof(struct uwsgi_cache_item), (unsigned long long) sizeof(struct uwsgi_cache_item) * uwsgi.cache_max_items, (unsigned long long) uwsgi.cache_blocksize * uwsgi.cache_max_items);
 }
 
 uint32_t djb33x_hash(char *key, int keylen) {
@@ -250,89 +101,6 @@ uint32_t djb33x_hash(char *key, int keylen) {
 
 	return hash;
 }
-
-
-inline uint64_t uwsgi_dict_get_index(struct uwsgi_dict *udict, char *key, uint16_t keylen) {
-
-        uint32_t hash = djb33x_hash(key, keylen);
-
-        int hash_key = hash % 0xffff;
-
-        uint64_t slot = udict->hashtable[hash_key];
-
-        struct uwsgi_dict_item *udi;
-
-        udi = &udict->items[slot];
-
-        // first round
-        if (udi->djbhash != hash) goto cycle;
-        if (udi->keysize != keylen) goto cycle;
-        if (memcmp(udi->key, key, keylen)) goto cycle;
-
-        return slot;
-
-cycle:
-        while(udi->next) {
-                slot = udi->next;
-                udi = &udict->items[slot];
-                if (udi->djbhash != hash) continue;
-                if (udi->keysize != keylen) continue;
-                if (!memcmp(udi->key, key, keylen)) return slot;
-        }
-
-        return 0;
-}
-
-char *uwsgi_dict_get(struct uwsgi_dict *udict, char *key, uint16_t keylen, uint64_t *valsize) {
-
-        uint64_t index = uwsgi_dict_get_index(udict, key, keylen);
-
-        if (index) {
-                *valsize = udict->items[index].valsize;
-                udict->items[index].hits++;
-                return udict->data+(index*udict->blocksize);
-        }
-
-        return NULL;
-}
-
-int uwsgi_dict_del(struct uwsgi_dict *udict, char *key, uint16_t keylen) {
-
-        uint64_t index = 0;
-        struct uwsgi_dict_item *udi;
-        int ret = -1;
-
-        index = uwsgi_dict_get_index(udict, key, keylen);
-        if (index) {
-                udi = &udict->items[index] ;
-                udi->keysize = 0;
-                udi->valsize = 0;
-                udict->unused_stack_ptr++;
-                udict->unused_stack[udict->unused_stack_ptr] = index;
-                // try to return to initial condition...
-                if (index == udict->first_available_item-1) {
-                        udict->first_available_item--;
-                }
-                ret = 0;
-                // relink collisioned entry
-                if (udi->prev) {
-                        udict->items[udi->prev].next = udi->next;
-                }
-                if (udi->next) {
-                        udict->items[udi->next].prev = udi->prev;
-                }
-                if (!udi->prev && !udi->next) {
-                        // reset hashtable entry
-                        udict->hashtable[udi->djbhash % 0xffff] = 0;
-                }
-                udi->djbhash = 0;
-                udi->prev = 0;
-                udi->next = 0;
-        }
-
-        return ret;
-}
-
 
 
 inline uint64_t uwsgi_cache_get_index(char *key, uint16_t keylen) {
@@ -512,75 +280,20 @@ int uwsgi_cache_set(char *key, uint16_t keylen, char *val, uint64_t vallen, uint
 			uci->prev = last_index;
 		}
 	}
+	else if (flags & UWSGI_CACHE_FLAG_UPDATE) {
+		uci = &uwsgi.cache_items[index] ;
+		if (expires) {
+			expires += time(NULL);
+			uci->expires = expires;
+		}
+		memcpy(uwsgi.cache+(index*uwsgi.cache_blocksize), val, vallen);
+		uci->valsize = vallen;
+		ret = 0;
+	}
 
 end:
 	return ret;
 	
-}
-
-int uwsgi_dict_set(struct uwsgi_dict *udict, char *key, uint16_t keylen, char *val, uint64_t vallen) {
-
-        uint64_t index = 0, last_index = 0 ;
-
-        struct uwsgi_dict_item *udi, *udii;
-
-        int ret = -1;
-        int slot;
-
-        if (!keylen || !vallen) return -1;
-
-        if (keylen > UWSGI_CACHE_MAX_KEY_SIZE) return -1;
-
-        if (udict->first_available_item >= udict->max_items && !udict->unused_stack_ptr) {
-                uwsgi_log("*** DANGER dictionary %p is FULL !!! ***\n", udict);
-                goto end;
-        }
-
-        index = uwsgi_dict_get_index(udict, key, keylen);
-        if (!index) {
-                if (udict->unused_stack_ptr) {
-                        index = udict->unused_stack[udict->unused_stack_ptr];
-                        udict->unused_stack_ptr--;
-                }
-                else {
-                        index = udict->first_available_item;
-                        if (udict->first_available_item < udict->max_items) {
-                                udict->first_available_item++;
-                        }
-                }
-                udi = &udict->items[index] ;
-                udi->djbhash = djb33x_hash(key, keylen);
-                udi->hits = 0;
-                memcpy(udi->key, key, keylen);
-                memcpy(udict->data+(index*udict->blocksize), val, vallen);
-
-                // set this as late as possibile (to reduce races risk)
-
-                udi->valsize = vallen;
-                udi->keysize = keylen;
-                ret = 0;
-                // now put the value in the 16bit hashtable
-                slot = udi->djbhash % 0xffff;
-
-                if (udict->hashtable[slot] == 0) {
-                        udict->hashtable[slot] = index;
-                }
-                else {
-                        // append to first available next
-                        last_index = udict->hashtable[slot];
-                        udii = &udict->items[ last_index ];
-                        while(udii->next) {
-                                last_index = udii->next;
-                                udii = &udict->items[ last_index ];
-                        }
-                        udii->next = index;
-                        udi->prev = last_index;
-                }
-        }
-
-end:
-        return ret;
-
 }
 
 /* THIS PART IS HEAVILY OPTIMIZED: PERFORMANCE NOT ELEGANCE !!! */

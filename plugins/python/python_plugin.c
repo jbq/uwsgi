@@ -3,6 +3,8 @@
 extern struct uwsgi_server uwsgi;
 struct uwsgi_python up;
 
+extern struct http_status_codes hsc[];
+
 #include <glob.h>
 
 extern PyTypeObject uwsgi_InputType;
@@ -12,8 +14,9 @@ struct option uwsgi_python_options[] = {
 	{"file", required_argument, 0, LONG_ARGS_FILE_CONFIG},
 	{"eval", required_argument, 0, LONG_ARGS_EVAL_CONFIG},
 	{"module", required_argument, 0, 'w'},
+	{"wsgi", required_argument, 0, 'w'},
 	{"callable", required_argument, 0, LONG_ARGS_CALLABLE},
-	{"test", required_argument, 0, 'j'},
+	{"test", required_argument, 0, 'J'},
 	{"home", required_argument, 0, 'H'},
 	{"virtualenv", required_argument, 0, 'H'},
 	{"venv", required_argument, 0, 'H'},
@@ -26,10 +29,21 @@ struct option uwsgi_python_options[] = {
 	{"pyimport", required_argument, 0, LONG_ARGS_PYIMPORT},
 	{"py-import", required_argument, 0, LONG_ARGS_PYIMPORT},
 	{"python-import", required_argument, 0, LONG_ARGS_PYIMPORT},
+	{"shared-import", required_argument, 0, LONG_ARGS_SHARED_PYIMPORT},
+	{"shared-pyimport", required_argument, 0, LONG_ARGS_SHARED_PYIMPORT},
+	{"shared-py-import", required_argument, 0, LONG_ARGS_SHARED_PYIMPORT},
+	{"shared-python-import", required_argument, 0, LONG_ARGS_SHARED_PYIMPORT},
+	{"spooler-import", required_argument, 0, LONG_ARGS_SPOOLER_PYIMPORT},
+	{"spooler-pyimport", required_argument, 0, LONG_ARGS_SPOOLER_PYIMPORT},
+	{"spooler-py-import", required_argument, 0, LONG_ARGS_SPOOLER_PYIMPORT},
+	{"spooler-python-import", required_argument, 0, LONG_ARGS_SPOOLER_PYIMPORT},
 	{"pp", required_argument, 0, LONG_ARGS_PYTHONPATH},
 	{"pyargv", required_argument, 0, LONG_ARGS_PYARGV},
 	{"optimize", required_argument, 0, 'O'},
 	{"paste", required_argument, 0, LONG_ARGS_PASTE},
+	{"web3", required_argument, 0, LONG_ARGS_WEB3},
+	{"pump", required_argument, 0, LONG_ARGS_PUMP},
+	{"wsgi-lite", required_argument, 0, LONG_ARGS_WSGI_LITE},
 #ifdef UWSGI_INI
 	{"ini-paste", required_argument, 0, LONG_ARGS_INI_PASTE},
 #endif
@@ -37,7 +51,12 @@ struct option uwsgi_python_options[] = {
 	{"ignore-script-name", no_argument, &up.ignore_script_name, 1},
 	{"pep3333-input", no_argument, &up.pep3333_input, 1},
 	{"reload-os-env", no_argument, &up.reload_os_env, 1},
+#ifndef UWSGI_PYPY
 	{"no-site", no_argument, &Py_NoSiteFlag, 1},
+#endif
+	{"pyshell", no_argument, 0, LONG_ARGS_PYSHELL},
+	{"python", required_argument, 0, LONG_ARGS_PYTHON_RUN},
+	{"py", required_argument, 0, LONG_ARGS_PYTHON_RUN},
 
 	{0, 0, 0, 0},
 };
@@ -60,6 +79,7 @@ struct uwsgi_help_item uwsgi_python_help[] = {
 {"file <file>", "use python file instead of python module for configuration"},
 {"eval <code>", "evaluate code for app configuration"},
 {"ini-paste <inifile>", "path of ini config file that contains paste configuration"},
+{"pyshell", "run a python interactive shell in the uwsgi environment (steals a worker)"},
 
 
  { 0, 0},
@@ -88,9 +108,14 @@ PyMethodDef uwsgi_write_method[] = { {"uwsgi_write", py_uwsgi_write, METH_VARARG
 
 int uwsgi_python_init() {
 
+#ifndef UWSGI_PYPY
 	char *pyversion = strchr(Py_GetVersion(), '\n');
-        uwsgi_log("Python version: %.*s %s\n", pyversion-Py_GetVersion(), Py_GetVersion(), Py_GetCompiler()+1);
+        uwsgi_log_initial("Python version: %.*s %s\n", pyversion-Py_GetVersion(), Py_GetVersion(), Py_GetCompiler()+1);
+#else
+	uwsgi_log_initial("PyPy version: %s\n", PYPY_VERSION);
+#endif
 
+#ifndef UWSGI_PYPY
 	if (up.home != NULL) {
 #ifdef PYTHREE
 		wchar_t *wpyhome;
@@ -119,9 +144,12 @@ int uwsgi_python_init() {
 #endif
 
 
+	Py_OptimizeFlag = up.optimize;
+
 	Py_Initialize();
 
-	Py_OptimizeFlag = up.optimize;
+
+#endif
 
 	up.wsgi_spitout = PyCFunction_New(uwsgi_spit_method, NULL);
 	up.wsgi_writeout = PyCFunction_New(uwsgi_write_method, NULL);
@@ -136,7 +164,7 @@ int uwsgi_python_init() {
         up.reset_ts = simple_reset_ts;
 	
 
-	uwsgi_log("Python main interpreter initialized at %p\n", up.main_thread);
+	uwsgi_log_initial("Python main interpreter initialized at %p\n", up.main_thread);
 
 	return 1;
 
@@ -144,6 +172,7 @@ int uwsgi_python_init() {
 
 void uwsgi_python_reset_random_seed() {
 
+#ifndef UWSGI_PYPY
 	PyObject *random_module, *random_dict, *random_seed;
 
         // reinitialize the random seed (thanks Jonas Borgström)
@@ -163,22 +192,33 @@ void uwsgi_python_reset_random_seed() {
                         }
                 }
         }
+#endif
 }
 
 void uwsgi_python_post_fork() {
 
+#ifdef UWSGI_SPOOLER
+	if (uwsgi.shared->spooler_pid > 0) {
+		if (uwsgi.shared->spooler_pid == getpid()) {
+			UWSGI_GET_GIL
+		}
+	}	
+#endif
+
 	uwsgi_python_reset_random_seed();
 
+#ifndef UWSGI_PYPY
 #ifdef UWSGI_EMBEDDED
 	// call the post_fork_hook
 	PyObject *uwsgi_dict = get_uwsgi_pydict("uwsgi");
 	if (uwsgi_dict) {
 		PyObject *pfh = PyDict_GetItemString(uwsgi_dict, "post_fork_hook");
 		if (pfh) {
-			python_call(pfh, PyTuple_New(0), 0);
+			python_call(pfh, PyTuple_New(0), 0, NULL);
 		}
 	}
 	PyErr_Clear();
+#endif
 #endif
 
 UWSGI_RELEASE_GIL
@@ -187,6 +227,7 @@ UWSGI_RELEASE_GIL
 
 PyObject *uwsgi_pyimport_by_filename(char *name, char *filename) {
 
+#ifndef UWSGI_PYPY
 	FILE *pyfile;
 	struct _node *py_file_node = NULL;
 	PyObject *py_compiled_node, *py_file_module;
@@ -195,7 +236,7 @@ PyObject *uwsgi_pyimport_by_filename(char *name, char *filename) {
 	char *real_filename = filename;
 
 
-	if (strncmp(filename, "http://", 7) && strncmp(filename, "sym://", 6)) {
+	if (!uwsgi_check_scheme(filename)) {
 
 		pyfile = fopen(filename, "r");
 		if (!pyfile) {
@@ -216,7 +257,6 @@ PyObject *uwsgi_pyimport_by_filename(char *name, char *filename) {
 			if (!pyfile) {
 				uwsgi_error_open(real_filename);
 				free(real_filename);
-				fclose(pyfile);
 				return NULL;
 			}
 		}
@@ -225,7 +265,8 @@ PyObject *uwsgi_pyimport_by_filename(char *name, char *filename) {
 		if (!py_file_node) {
 			PyErr_Print();
 			uwsgi_log("failed to parse file %s\n", real_filename);
-			free(real_filename);
+			if (is_a_package)
+				free(real_filename);
 			fclose(pyfile);
 			return NULL;
 		}
@@ -271,9 +312,11 @@ PyObject *uwsgi_pyimport_by_filename(char *name, char *filename) {
 	}
 
 	return py_file_module;
+#else
+	return NULL;
+#endif
 
 }
-
 
 void init_uwsgi_vars() {
 
@@ -282,11 +325,6 @@ void init_uwsgi_vars() {
 
 	PyObject *modules = PyImport_GetModuleDict();
 	PyObject *tmp_module;
-
-#ifdef UWSGI_MINTERPRETERS
-	char venv_version[15];
-	PyObject *site_module;
-#endif
 
 	/* add cwd to pythonpath */
 	pysys = PyImport_ImportModule("sys");
@@ -309,39 +347,6 @@ void init_uwsgi_vars() {
 		PyErr_Print();
 		exit(1);
 	}
-
-#ifdef UWSGI_MINTERPRETERS
-	// simulate a pythonhome directive
-	if (uwsgi.wsgi_req->pyhome_len > 0) {
-
-		PyObject *venv_path = UWSGI_PYFROMSTRINGSIZE(uwsgi.wsgi_req->pyhome, uwsgi.wsgi_req->pyhome_len);
-
-#ifdef UWSGI_DEBUG
-		uwsgi_debug("setting dynamic virtualenv to %.*s\n", uwsgi.wsgi_req->pyhome_len, uwsgi.wsgi_req->pyhome);
-#endif
-
-		PyDict_SetItemString(pysys_dict, "prefix", venv_path);
-		PyDict_SetItemString(pysys_dict, "exec_prefix", venv_path);
-
-		venv_version[14] = 0;
-		if (snprintf(venv_version, 15, "/lib/python%d.%d", PY_MAJOR_VERSION, PY_MINOR_VERSION) == -1) {
-			return;
-		}
-
-		// check here
-		PyString_Concat(&venv_path, PyString_FromString(venv_version));
-
-		if (PyList_Insert(pypath, 0, venv_path)) {
-			PyErr_Print();
-		}
-
-		site_module = PyImport_ImportModule("site");
-		if (site_module) {
-			PyImport_ReloadModule(site_module);
-		}
-
-	}
-#endif
 
 	if (PyList_Insert(pypath, 0, UWSGI_PYFROMSTRING(".")) != 0) {
 		PyErr_Print();
@@ -436,11 +441,16 @@ void init_uwsgi_embedded_module() {
 		exit(1);
 	}
 
+	Py_INCREF((PyObject *) &uwsgi_InputType);
+
 	up.embedded_dict = PyModule_GetDict(new_uwsgi_module);
 	if (!up.embedded_dict) {
 		uwsgi_log("could not get uwsgi module __dict__\n");
 		exit(1);
 	}
+
+	// just for safety
+	Py_INCREF(up.embedded_dict);
 
 	if (PyDict_SetItemString(up.embedded_dict, "version", PyString_FromString(UWSGI_VERSION))) {
 		PyErr_Print();
@@ -523,7 +533,12 @@ void init_uwsgi_embedded_module() {
 		if (PyDict_Contains(py_opt_dict, PyString_FromString(uwsgi.exported_opts[i]->key))) {
 			PyObject *py_opt_item = PyDict_GetItemString(py_opt_dict, uwsgi.exported_opts[i]->key);
 			if (PyList_Check(py_opt_item)) {
-				PyList_Append(py_opt_item, PyString_FromString(uwsgi.exported_opts[i]->value));
+				if (uwsgi.exported_opts[i]->value == NULL) {
+					PyList_Append(py_opt_item, Py_True);
+				}
+				else {
+					PyList_Append(py_opt_item, PyString_FromString(uwsgi.exported_opts[i]->value));
+				}
 			}
 			else {
 				PyObject *py_opt_list = PyList_New(0);
@@ -549,6 +564,23 @@ void init_uwsgi_embedded_module() {
 	}
 
 	if (PyDict_SetItemString(up.embedded_dict, "opt", py_opt_dict)) {
+		PyErr_Print();
+		exit(1);
+	}
+
+	PyObject *py_magic_table = PyDict_New();
+	uint8_t mtk;
+	for (i = 0; i <= 0xff; i++) {
+		// a bit of magic :P
+		mtk = i;
+                if (uwsgi.magic_table[i]) {
+			if (uwsgi.magic_table[i][0] != 0) {
+				PyDict_SetItem(py_magic_table, PyString_FromStringAndSize((char *) &mtk, 1), PyString_FromString(uwsgi.magic_table[i]));
+			}
+		}
+        }
+
+	if (PyDict_SetItemString(up.embedded_dict, "magic_table", py_magic_table)) {
 		PyErr_Print();
 		exit(1);
 	}
@@ -631,9 +663,19 @@ void init_uwsgi_embedded_module() {
 		init_uwsgi_module_sharedarea(new_uwsgi_module);
 	}
 
-	init_uwsgi_module_cache(new_uwsgi_module);
+	if (uwsgi.cache_max_items > 0) {
+		init_uwsgi_module_cache(new_uwsgi_module);
+	}
 
-	init_uwsgi_module_queue(new_uwsgi_module);
+	if (uwsgi.queue_size > 0) {
+		init_uwsgi_module_queue(new_uwsgi_module);
+	}
+
+#ifdef UWSGI_SNMP
+	if (uwsgi.snmp) {
+		init_uwsgi_module_snmp(new_uwsgi_module);
+	}
+#endif
 
 	if (up.extension) {
 		up.extension();
@@ -697,8 +739,18 @@ int uwsgi_python_manage_options(int i, char *optarg) {
 			uwsgi_log("you can specify at most %d --pymodule-alias options\n", MAX_PYMODULE_ALIAS);
 		}
 		return 1;
+	case LONG_ARGS_PYSHELL:
+		uwsgi.honour_stdin = 1;
+		up.pyshell = 1;
+		return 1;
+	case LONG_ARGS_SHARED_PYIMPORT:
+		uwsgi_string_new_list(&up.shared_import_list, optarg);
+		return 1;
 	case LONG_ARGS_PYIMPORT:
 		uwsgi_string_new_list(&up.import_list, optarg);
+		return 1;
+	case LONG_ARGS_SPOOLER_PYIMPORT:
+		uwsgi_string_new_list(&up.spooler_import_list, optarg);
 		return 1;
 	case LONG_ARGS_POST_PYMODULE_ALIAS:
 		uwsgi_string_new_list(&up.post_pymodule_alias, optarg);
@@ -716,7 +768,7 @@ int uwsgi_python_manage_options(int i, char *optarg) {
 	case LONG_ARGS_PYARGV:
 		up.argv = optarg;
 		return 1;
-	case 'j':
+	case 'J':
 		up.test_module = optarg;
 		return 1;
 	case 'H':
@@ -732,15 +784,24 @@ int uwsgi_python_manage_options(int i, char *optarg) {
 
 #ifdef UWSGI_INI
 	case LONG_ARGS_INI_PASTE:
-		uwsgi.ini = optarg;
-		if (uwsgi.ini[0] != '/') {
-			up.paste = uwsgi_concat4("config:", uwsgi.cwd, "/", uwsgi.ini);
+		uwsgi_string_new_list(&uwsgi.ini,optarg);
+		if (optarg[0] != '/') {
+			up.paste = uwsgi_concat4("config:", uwsgi.cwd, "/", optarg);
 		}
 		else {
-			up.paste = uwsgi_concat2("config:", uwsgi.ini);
+			up.paste = uwsgi_concat2("config:", optarg);
 		}
 		return 1;
 #endif
+	case LONG_ARGS_WEB3:
+		up.web3 = optarg;
+		return 1;
+	case LONG_ARGS_PUMP:
+		up.pump = optarg;
+		return 1;
+	case LONG_ARGS_WSGI_LITE:
+		up.wsgi_lite = optarg;
+		return 1;
 	case LONG_ARGS_PASTE:
 		up.paste = optarg;
 		return 1;
@@ -752,14 +813,31 @@ int uwsgi_python_manage_options(int i, char *optarg) {
 	return 0;
 }
 
-int uwsgi_python_mount_app(char *mountpoint, char *app) {
+int uwsgi_python_mount_app(char *mountpoint, char *app, int regexp) {
 
-	uwsgi.wsgi_req->script_name = mountpoint;
-	uwsgi.wsgi_req->script_name_len = strlen(mountpoint);
+	int id;
+	uwsgi.wsgi_req->appid = mountpoint;
+	uwsgi.wsgi_req->appid_len = strlen(mountpoint);
 	if (uwsgi.single_interpreter) {
-		return init_uwsgi_app(LOADER_MOUNT, app, uwsgi.wsgi_req, up.main_thread);
+		id = init_uwsgi_app(LOADER_MOUNT, app, uwsgi.wsgi_req, up.main_thread, PYTHON_APP_TYPE_WSGI);
 	}
-	return init_uwsgi_app(LOADER_MOUNT, app, uwsgi.wsgi_req, NULL);
+	id = init_uwsgi_app(LOADER_MOUNT, app, uwsgi.wsgi_req, NULL, PYTHON_APP_TYPE_WSGI);
+
+#ifdef UWSGI_PCRE
+	int i;
+	if (regexp && id != -1) {
+		struct uwsgi_app *ua = &uwsgi_apps[id];
+		uwsgi_regexp_build(mountpoint, &ua->pattern, &ua->pattern_extra);
+		if (uwsgi.mywid == 0) {
+			for(i=1;i<=uwsgi.numproc;i++) {
+				uwsgi.workers[i].apps[id].pattern = ua->pattern;
+				uwsgi.workers[i].apps[id].pattern_extra = ua->pattern_extra;
+			}
+		}
+	}
+#endif
+
+	return id;
 
 }
 
@@ -775,11 +853,17 @@ char *uwsgi_pythonize(char *orig) {
 	else if (!strncmp(name, "http://", 7)) {
 		name+=7;
 	}
+	else if (!strncmp(name, "data://", 7)) {
+		name+=7;
+	}
 
 	len = strlen(name);
 	for(i=0;i<len;i++) {
-		if (name[i] == '/') {
-			name[i] = '.';
+		if (name[i] == '.') {
+			name[i] = '_';
+		}
+		else if (name[i] == '/') {
+			name[i] = '_';
 		}
 	}
 
@@ -792,23 +876,45 @@ char *uwsgi_pythonize(char *orig) {
 
 }
 
-void uwsgi_python_init_apps() {
+void uwsgi_python_spooler_init(void) {
 
+	struct uwsgi_string_list *upli = up.spooler_import_list;
 
-	if (uwsgi.async > 1) {
-		up.current_recursion_depth = uwsgi_malloc(sizeof(int)*uwsgi.async);
-        	up.current_frame = uwsgi_malloc(sizeof(struct _frame)*uwsgi.async);
-	}
+	UWSGI_GET_GIL
+
+        while(upli) {
+                if (strchr(upli->value, '/') || uwsgi_endswith(upli->value, ".py")) {
+                        uwsgi_pyimport_by_filename(uwsgi_pythonize(upli->value), upli->value);
+                }
+                else {
+                        if (PyImport_ImportModule(upli->value) == NULL) {
+                                PyErr_Print();
+                        }
+                }
+                upli = upli->next;
+        }
+
+	UWSGI_RELEASE_GIL
+	
+
+}
+
+// this hook will be executed by master (or worker1 when master is not requested, so COW is in place)
+void uwsgi_python_preinit_apps() {
 
 	init_pyargv();
 
-#ifdef UWSGI_MINTERPRETERS
+#ifndef UWSGI_PYPY
+#ifdef UWSGI_EMBEDDED
         init_uwsgi_embedded_module();
+#endif
 #endif
 
 #ifdef __linux__
-#ifndef PYTHREE
+#ifndef UWSGI_PYPY
+#ifdef UWSGI_EMBEDDED
 	uwsgi_init_symbol_import();
+#endif
 #endif
 #endif
 
@@ -820,6 +926,34 @@ void uwsgi_python_init_apps() {
         }
 
         init_uwsgi_vars();
+
+	// load shared imports
+	struct uwsgi_string_list *upli = up.shared_import_list;
+	while(upli) {
+		if (strchr(upli->value, '/') || uwsgi_endswith(upli->value, ".py")) {
+			uwsgi_pyimport_by_filename(uwsgi_pythonize(upli->value), upli->value);
+		}
+		else {
+			if (PyImport_ImportModule(upli->value) == NULL) {
+				PyErr_Print();
+			}
+		}
+		upli = upli->next;
+	}
+
+}
+
+void uwsgi_python_init_apps() {
+
+	struct http_status_codes *http_sc;
+
+	// prepare for stack suspend/resume
+	if (uwsgi.async > 1) {
+		up.current_recursion_depth = uwsgi_malloc(sizeof(int)*uwsgi.async);
+#ifndef UWSGI_PYPY
+        	up.current_frame = uwsgi_malloc(sizeof(struct _frame)*uwsgi.async);
+#endif
+	}
 
         // setup app loaders
 #ifdef UWSGI_MINTERPRETERS
@@ -885,22 +1019,47 @@ void uwsgi_python_init_apps() {
 
 
 	if (up.wsgi_config != NULL) {
-		init_uwsgi_app(LOADER_UWSGI, up.wsgi_config, uwsgi.wsgi_req, up.main_thread);
+		init_uwsgi_app(LOADER_UWSGI, up.wsgi_config, uwsgi.wsgi_req, up.main_thread, PYTHON_APP_TYPE_WSGI);
 	}
 
 	if (up.file_config != NULL) {
-		init_uwsgi_app(LOADER_FILE, up.file_config, uwsgi.wsgi_req, up.main_thread);
+		init_uwsgi_app(LOADER_FILE, up.file_config, uwsgi.wsgi_req, up.main_thread, PYTHON_APP_TYPE_WSGI);
 	}
 	if (up.paste != NULL) {
-		init_uwsgi_app(LOADER_PASTE, up.paste, uwsgi.wsgi_req, up.main_thread);
+		init_uwsgi_app(LOADER_PASTE, up.paste, uwsgi.wsgi_req, up.main_thread, PYTHON_APP_TYPE_WSGI);
 	}
 	if (up.eval != NULL) {
-		init_uwsgi_app(LOADER_EVAL, up.eval, uwsgi.wsgi_req, up.main_thread);
+		init_uwsgi_app(LOADER_EVAL, up.eval, uwsgi.wsgi_req, up.main_thread, PYTHON_APP_TYPE_WSGI);
+	}
+	if (up.web3 != NULL) {
+		init_uwsgi_app(LOADER_UWSGI, up.web3, uwsgi.wsgi_req, up.main_thread, PYTHON_APP_TYPE_WEB3);
+	}
+	if (up.pump != NULL) {
+		init_uwsgi_app(LOADER_UWSGI, up.pump, uwsgi.wsgi_req, up.main_thread, PYTHON_APP_TYPE_PUMP);
+		// filling http status codes
+        	for (http_sc = hsc; http_sc->message != NULL; http_sc++) {
+                	http_sc->message_size = (int) strlen(http_sc->message);
+        	}
+	}
+	if (up.wsgi_lite != NULL) {
+		init_uwsgi_app(LOADER_UWSGI, up.wsgi_lite, uwsgi.wsgi_req, up.main_thread, PYTHON_APP_TYPE_WSGI_LITE);
 	}
 
 	if (uwsgi.profiler) {
+#ifndef UWSGI_PYPY
 		if (!strcmp(uwsgi.profiler, "pycall")) {
 			PyEval_SetProfile(uwsgi_python_profiler_call, NULL);
+		}
+#endif
+	}
+
+	PyObject *uwsgi_dict = get_uwsgi_pydict("uwsgi");
+        if (uwsgi_dict) {
+                up.after_req_hook = PyDict_GetItemString(uwsgi_dict, "after_req_hook");
+                if (up.after_req_hook) {
+			Py_INCREF(up.after_req_hook);
+			up.after_req_hook_args = PyTuple_New(0);
+			Py_INCREF(up.after_req_hook_args);
 		}
 	}
 
@@ -948,11 +1107,16 @@ void uwsgi_python_enable_threads() {
 	up.gil_get = gil_real_get;
 	up.gil_release = gil_real_release;
 
+	up.swap_ts = simple_threaded_swap_ts;
+	up.reset_ts = simple_threaded_reset_ts;
+
 	if (uwsgi.threads > 1) {
 		up.swap_ts = threaded_swap_ts;
 		up.reset_ts = threaded_reset_ts;
 	}
+
 	uwsgi_log("threads support enabled\n");
+	
 
 }
 
@@ -963,6 +1127,35 @@ void uwsgi_python_init_thread(int core_id) {
 	pts = PyThreadState_New(up.main_thread->interp);
 	pthread_setspecific(up.upt_save_key, (void *) pts);
 	pthread_setspecific(up.upt_gil_key, (void *) pts);
+#ifdef UWSGI_DEBUG
+	uwsgi_log("python ThreadState %d = %p\n", core_id, pts);
+#endif
+	UWSGI_GET_GIL;
+	// call threading.currentThread (taken from mod_wsgi, but removes DECREFs as thread in uWSGI are fixed)
+	PyObject *threading_module = PyImport_ImportModule("threading");
+        if (threading_module) {
+        	PyObject *threading_module_dict = PyModule_GetDict(threading_module);
+                if (threading_module_dict) {
+#ifdef PYTHREE
+			PyObject *threading_current = PyDict_GetItemString(threading_module_dict, "current_thread");
+#else
+			PyObject *threading_current = PyDict_GetItemString(threading_module_dict, "currentThread");
+#endif
+                        if (threading_current) {
+                                PyObject *current_thread = PyEval_CallObject(threading_current, (PyObject *)NULL);
+                                if (!current_thread) {
+					// ignore the error
+                                        PyErr_Clear();
+                                }
+				else {
+					PyObject_SetAttrString(current_thread, "name", PyString_FromFormat("uWSGIWorker%dCore%d", uwsgi.mywid, core_id));
+					Py_INCREF(current_thread);
+				}
+                        }
+                }
+        }
+	UWSGI_RELEASE_GIL;
+	
 
 }
 
@@ -975,16 +1168,16 @@ int uwsgi_python_xml(char *node, char *content) {
 	}
 
 	if (!strcmp("script", node)) {
-		return init_uwsgi_app(LOADER_UWSGI, content, uwsgi.wsgi_req, interpreter);
+		return init_uwsgi_app(LOADER_UWSGI, content, uwsgi.wsgi_req, interpreter, PYTHON_APP_TYPE_WSGI);
 	}
 	else if (!strcmp("file", node)) {
-		return init_uwsgi_app(LOADER_FILE, content, uwsgi.wsgi_req, interpreter);
+		return init_uwsgi_app(LOADER_FILE, content, uwsgi.wsgi_req, interpreter, PYTHON_APP_TYPE_WSGI);
 	}
 	else if (!strcmp("eval", node)) {
-		return init_uwsgi_app(LOADER_EVAL, content, uwsgi.wsgi_req, interpreter);
+		return init_uwsgi_app(LOADER_EVAL, content, uwsgi.wsgi_req, interpreter, PYTHON_APP_TYPE_WSGI);
 	}
 	else if (!strcmp("wsgi", node)) {
-		return init_uwsgi_app(LOADER_EVAL, content, uwsgi.wsgi_req, interpreter);
+		return init_uwsgi_app(LOADER_EVAL, content, uwsgi.wsgi_req, interpreter, PYTHON_APP_TYPE_WSGI);
 	}
 	else if (!strcmp("module", node)) {
 		uwsgi.wsgi_req->module = content;
@@ -995,10 +1188,10 @@ int uwsgi_python_xml(char *node, char *content) {
 			uwsgi.wsgi_req->callable++;
 			uwsgi.wsgi_req->callable_len = strlen(uwsgi.wsgi_req->callable);
 			uwsgi.wsgi_req->module_len = strlen(uwsgi.wsgi_req->module);
-			return init_uwsgi_app(LOADER_DYN, uwsgi.wsgi_req, uwsgi.wsgi_req, interpreter);
+			return init_uwsgi_app(LOADER_DYN, uwsgi.wsgi_req, uwsgi.wsgi_req, interpreter, PYTHON_APP_TYPE_WSGI);
 		}
 		else {
-			return init_uwsgi_app(LOADER_UWSGI, content, uwsgi.wsgi_req, interpreter);
+			return init_uwsgi_app(LOADER_UWSGI, content, uwsgi.wsgi_req, interpreter, PYTHON_APP_TYPE_WSGI);
 		}
 		return 1;
 	}
@@ -1010,12 +1203,13 @@ int uwsgi_python_xml(char *node, char *content) {
 	else if (!strcmp("callable", node)) {
 		uwsgi.wsgi_req->callable = content;
 		uwsgi.wsgi_req->callable_len = strlen(content);
-		return init_uwsgi_app(LOADER_DYN, uwsgi.wsgi_req, uwsgi.wsgi_req, interpreter);
+		return init_uwsgi_app(LOADER_DYN, uwsgi.wsgi_req, uwsgi.wsgi_req, interpreter, PYTHON_APP_TYPE_WSGI);
 	}
 
 	return 0;
 }
 
+#ifndef UWSGI_PYPY
 void uwsgi_python_suspend(struct wsgi_request *wsgi_req) {
 
 	PyThreadState *tstate = PyThreadState_GET();
@@ -1029,6 +1223,57 @@ void uwsgi_python_suspend(struct wsgi_request *wsgi_req) {
 		up.current_main_frame = tstate->frame;
 	}
 
+}
+#endif
+
+char *uwsgi_python_code_string(char *id, char *code, char *function, char *key, uint16_t keylen) {
+
+	PyObject *cs_module = NULL;
+	PyObject *cs_dict = NULL;
+
+	UWSGI_GET_GIL;
+
+	cs_module = PyImport_ImportModule(id);
+	if (!cs_module) {
+		PyErr_Clear();
+		cs_module = uwsgi_pyimport_by_filename(id, code);
+	}
+
+	if (!cs_module) {
+		UWSGI_RELEASE_GIL;
+		return NULL;
+	}
+
+	cs_dict = PyModule_GetDict(cs_module);
+	if (!cs_dict) {
+		PyErr_Print();
+		UWSGI_RELEASE_GIL;
+		return NULL;
+	}
+	
+	PyObject *func = PyDict_GetItemString(cs_dict, function);
+	if (!func) {
+		uwsgi_log("function %s not available in %s\n", function, code);
+		PyErr_Print();
+		UWSGI_RELEASE_GIL;
+		return NULL;
+	}
+
+	PyObject *args = PyTuple_New(1);
+
+	PyTuple_SetItem(args, 0, PyString_FromStringAndSize(key, keylen));
+
+	PyObject *ret = python_call(func, args, 0, NULL);
+	Py_DECREF(args);
+	if (ret && PyString_Check(ret)) {
+		char *val = PyString_AsString(ret);
+		UWSGI_RELEASE_GIL;
+		return val;
+	}
+
+	UWSGI_RELEASE_GIL;
+	return NULL;
+	
 }
 
 int uwsgi_python_signal_handler(uint8_t sig, void *handler) {
@@ -1046,9 +1291,10 @@ int uwsgi_python_signal_handler(uint8_t sig, void *handler) {
 
 	PyTuple_SetItem(args, 0, PyInt_FromLong(sig));
 
-	ret = python_call(handler, args, 0);
-
+	ret = python_call(handler, args, 0, NULL);
+	Py_DECREF(args);
 	if (ret) {
+		Py_DECREF(ret);
 		UWSGI_RELEASE_GIL;
 		return 0;
 	}
@@ -1058,38 +1304,44 @@ clear:
 	return -1;
 }
 
-uint16_t uwsgi_python_rpc(void *func, uint8_t argc, char **argv, char *buffer) {
+uint16_t uwsgi_python_rpc(void *func, uint8_t argc, char **argv, uint16_t argvs[], char *buffer) {
+
+	UWSGI_GET_GIL;
 
 	uint8_t i;
-	PyObject *pyargs = PyTuple_New(argc);
-	PyObject *ret;
 	char *rv;
 	size_t rl;
+
+	PyObject *pyargs = PyTuple_New(argc);
+	PyObject *ret;
 
 	if (!pyargs)
 		return 0;
 
 	for (i = 0; i < argc; i++) {
-		PyTuple_SetItem(pyargs, i, PyString_FromString(argv[i]));
+		PyTuple_SetItem(pyargs, i, PyString_FromStringAndSize(argv[i], argvs[i]));
 	}
 
-	ret = python_call((PyObject *) func, pyargs, 0);
-
+	ret = python_call((PyObject *) func, pyargs, 0, NULL);
+	Py_DECREF(pyargs);
 	if (ret) {
 		if (PyString_Check(ret)) {
 			rv = PyString_AsString(ret);
-			rl = strlen(rv);
-			if (rl <= 0xffff) {
+			rl = PyString_Size(ret);
+			if (rl <= 65536) {
 				memcpy(buffer, rv, rl);
 				Py_DECREF(ret);
+				UWSGI_RELEASE_GIL;
 				return rl;
 			}
 		}
+		Py_DECREF(ret);
 	}
 
 	if (PyErr_Occurred())
 		PyErr_Print();
 
+	UWSGI_RELEASE_GIL;
 
 	return 0;
 
@@ -1143,8 +1395,9 @@ int uwsgi_python_spooler(char *filename, char *buf, uint16_t len, char *body, si
 		PyDict_SetItemString(spool_dict, "body", PyString_FromStringAndSize(body, body_len));
 	}
 	PyTuple_SetItem(pyargs, 0, spool_dict);
-	
-	ret = python_call(spool_func, pyargs, 0);
+
+	ret = python_call(spool_func, pyargs, 0, NULL);
+
 	if (ret) {
 		if (!PyInt_Check(ret)) {
 			// error, retry
@@ -1166,6 +1419,7 @@ int uwsgi_python_spooler(char *filename, char *buf, uint16_t len, char *body, si
 	return -1;
 }
 
+#ifndef UWSGI_PYPY
 void uwsgi_python_resume(struct wsgi_request *wsgi_req) {
 
 	PyThreadState *tstate = PyThreadState_GET();
@@ -1180,10 +1434,77 @@ void uwsgi_python_resume(struct wsgi_request *wsgi_req) {
 	}
 
 }
+#endif
 
 void uwsgi_python_fixup() {
 	// set hacky modifier 30
-	uwsgi.p[30] = uwsgi.p[0];
+	uwsgi.p[30] = uwsgi_malloc( sizeof(struct uwsgi_plugin) );
+	memcpy(uwsgi.p[30], uwsgi.p[0], sizeof(struct uwsgi_plugin) );
+	uwsgi.p[30]->init_thread = NULL;
+}
+
+void uwsgi_python_hijack(void) {
+	// the pyshell will be execute only in the first worker
+
+#ifndef UWSGI_PYPY
+	if (up.pyshell && uwsgi.mywid == 1) {
+		// re-map stdin to stdout and stderr if we are logging to a file
+		if (uwsgi.logfile) {
+			if (dup2(0, 1) < 0) {
+				uwsgi_error("dup2()");
+			}
+			if (dup2(0, 2) < 0) {
+				uwsgi_error("dup2()");
+			}
+		}
+		UWSGI_GET_GIL;
+		PyImport_ImportModule("readline");
+		PyRun_InteractiveLoop(stdin, "uwsgi");
+		exit(0);
+	}
+#endif
+}
+
+int uwsgi_python_mule(char *opt) {
+
+	if (uwsgi_endswith(opt, ".py")) {
+		UWSGI_GET_GIL;
+		if (uwsgi_pyimport_by_filename("__main__", opt) == NULL) {
+			return 0;
+		}
+		UWSGI_RELEASE_GIL;
+		return 1;
+	}
+	
+	return 0;
+	
+}
+
+int uwsgi_python_mule_msg(char *message, size_t len) {
+
+	UWSGI_GET_GIL;
+
+	PyObject *mule_msg_hook = PyDict_GetItemString(up.embedded_dict, "mule_msg_hook");
+        if (!mule_msg_hook) {
+                // ignore
+                UWSGI_RELEASE_GIL;
+                return 0;
+        }
+
+	PyObject *pyargs = PyTuple_New(1);
+        PyTuple_SetItem(pyargs, 0, PyString_FromStringAndSize(message, len));
+
+        PyObject *ret = python_call(mule_msg_hook, pyargs, 0, NULL);
+	Py_DECREF(pyargs);
+	if (ret) {
+		Py_DECREF(ret);
+	}
+
+	if (PyErr_Occurred())
+                PyErr_Print();
+
+	UWSGI_RELEASE_GIL;
+	return 1;
 }
 
 struct uwsgi_plugin python_plugin = {
@@ -1195,9 +1516,11 @@ struct uwsgi_plugin python_plugin = {
 	.post_fork = uwsgi_python_post_fork,
 	.options = uwsgi_python_options,
 	.manage_opt = uwsgi_python_manage_options,
-	.short_options = "w:O:H:j:",
+	.short_options = "w:O:H:J:",
 	.request = uwsgi_request_wsgi,
 	.after_request = uwsgi_after_request_wsgi,
+
+	.preinit_apps = uwsgi_python_preinit_apps,
 	.init_apps = uwsgi_python_init_apps,
 
 	.fixup = uwsgi_python_fixup,
@@ -1211,13 +1534,23 @@ struct uwsgi_plugin python_plugin = {
 
 	.magic = uwsgi_python_magic,
 
+#ifndef UWSGI_PYPY
 	.suspend = uwsgi_python_suspend,
 	.resume = uwsgi_python_resume,
+#endif
+
+	.hijack_worker = uwsgi_python_hijack,
+	.spooler_init = uwsgi_python_spooler_init,
 
 	.signal_handler = uwsgi_python_signal_handler,
 	.rpc = uwsgi_python_rpc,
 
+	.mule = uwsgi_python_mule,
+	.mule_msg = uwsgi_python_mule_msg,
+
 	.spooler = uwsgi_python_spooler,
+
+	.code_string = uwsgi_python_code_string,
 
 	.help = uwsgi_python_help,
 

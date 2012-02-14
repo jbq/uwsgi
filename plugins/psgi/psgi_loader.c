@@ -41,19 +41,11 @@ XS(XS_stream)
     AV *response = (AV* ) SvREFCNT_inc(SvRV(ST(0))) ;
 
 	if (av_len(response) == 2) {
-
-#ifdef my_perl
-		while (psgi_response(wsgi_req, my_perl, response) != UWSGI_OK);
-#else
-		while (psgi_response(wsgi_req, uperl.main, response) != UWSGI_OK);
-#endif
+		while (psgi_response(wsgi_req, response) != UWSGI_OK);
 	}
 	else if (av_len(response) == 1) {
-#ifdef my_perl
-		while (psgi_response(wsgi_req, my_perl, response) != UWSGI_OK);
-#else
-		while (psgi_response(wsgi_req, uperl.main, response) != UWSGI_OK);
-#endif
+		while (psgi_response(wsgi_req, response) != UWSGI_OK);
+
 		SvREFCNT_dec(response);
                 ST(0) = sv_bless(newRV(sv_newmortal()), uperl.streaming_stash);
                 XSRETURN(1);
@@ -95,7 +87,7 @@ XS(XS_input_read) {
         }
         else if (uwsgi.post_buffering > 0) {
                 fd = -1;
-                if (wsgi_req->post_cl <= (size_t) uwsgi.post_buffering) {
+                if (wsgi_req->post_cl > (size_t) uwsgi.post_buffering) {
                         fd = fileno((FILE *)wsgi_req->async_post);
                 }
         }
@@ -236,6 +228,7 @@ xs_init(pTHX)
 void uwsgi_psgi_app() {
 
         struct stat stat_psgi;
+	int id = uwsgi_apps_cnt;
 
         if (uperl.psgi) {
 
@@ -291,7 +284,6 @@ void uwsgi_psgi_app() {
 
                 uperl.psgibuffer[stat_psgi.st_size] = 0;
 
-                if (uwsgi.threads < 2) {
                         uperl.psgi_main = perl_eval_pv(uwsgi_concat4("#line 1 ", uperl.psgi, "\n", uperl.psgibuffer), 0);
                         if (!uperl.psgi_main) {
                                 uwsgi_log("unable to find PSGI function entry point.\n");
@@ -303,11 +295,14 @@ void uwsgi_psgi_app() {
                                 exit(1);
                         }
 
+                if (uwsgi.threads < 2) {
                         free(uperl.psgibuffer);
                         close(uperl.fd);
-                }
+		}
 
-                uwsgi_log("PSGI app (%s) loaded at %p\n", uperl.psgi, uperl.psgi_main);
+		uwsgi_add_app(id, 5, "", 0);
+                uwsgi_log("PSGI app %d (%s) loaded at %p\n", id, uperl.psgi, uperl.psgi_main);
+
         }
 
 

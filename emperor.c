@@ -8,6 +8,8 @@ extern char **environ;
 int emperor_queue;
 char *emperor_absolute_dir;
 
+void emperor_send_stats(int);
+
 struct uwsgi_instance {
         struct uwsgi_instance *ui_prev;
         struct uwsgi_instance *ui_next;
@@ -32,6 +34,9 @@ struct uwsgi_instance {
         int loyal;
 
         int zerg;
+	
+	uid_t uid;
+	gid_t gid;
 };
 
 
@@ -166,22 +171,29 @@ void emperor_respawn(struct uwsgi_instance *c_ui, time_t mod) {
 	c_ui->respawns++;
 	c_ui->last_mod = mod;
 
-	uwsgi_log("reload the uwsgi instance %s\n", c_ui->name);
+	uwsgi_log("[emperor] reload the uwsgi instance %s\n", c_ui->name);
 }
 
-void emperor_add(char *name, time_t born, char *config, uint32_t config_size) {
+void emperor_add(char *name, time_t born, char *config, uint32_t config_size, uid_t uid, gid_t gid) {
 
 	struct uwsgi_instance *c_ui = ui;
 	struct uwsgi_instance *n_ui = NULL;
 	pid_t pid;
-	char **argv;
+	char **vassal_argv;
 	char *uef;
 	char **uenvs;
 	int counter;
 	char *colon = NULL;
 	int i;
 
-	sleep(1);
+	usleep(uwsgi.emperor_throttle*1000);
+
+	if (uwsgi.emperor_tyrant) {
+		if (uid == 0 || gid == 0) {
+			uwsgi_log("[emperor-tyrant] invalid permissions for file %s\n", name);
+			return;
+		}
+	}
 
 	while (c_ui->ui_next) {
 		c_ui = c_ui->ui_next;
@@ -209,6 +221,8 @@ void emperor_add(char *name, time_t born, char *config, uint32_t config_size) {
 
 	memcpy(n_ui->name, name, strlen(name));
 	n_ui->born = born;
+	n_ui->uid = uid;
+	n_ui->gid = gid;
 	n_ui->last_mod = born;
 	// start without loyalty
 	n_ui->last_loyal = born;
@@ -253,6 +267,24 @@ void emperor_add(char *name, time_t born, char *config, uint32_t config_size) {
 	}
 	else {
 
+		if (uwsgi.emperor_tyrant) {
+			uwsgi_log("[emperor-tyrant] dropping privileges to %d %d for instance %s\n", (int) uid, (int) gid, name);
+			if (setgid(gid)) {
+                                uwsgi_error("setgid()");
+                                exit(1);
+                        }
+                        if (setgroups(0, NULL)) {
+                                uwsgi_error("setgroups()");
+                                exit(1);
+                        }
+
+                        if (setuid(uid)) {
+                                uwsgi_error("setuid()");
+                                exit(1);
+                        }
+
+		}
+
 		unsetenv("UWSGI_RELOADS");
 		unsetenv("NOTIFY_SOCKET");
 
@@ -282,7 +314,9 @@ void emperor_add(char *name, time_t born, char *config, uint32_t config_size) {
 					break;
 				}
 				free(oe);
+#ifdef UWSGI_DEBUG
 				uwsgi_log("putenv %s\n", ne);
+#endif
 
 				if (putenv(ne)) {
 					uwsgi_error("putenv()");
@@ -308,9 +342,9 @@ void emperor_add(char *name, time_t born, char *config, uint32_t config_size) {
 			uct = uct->next;
 		}
 
-		argv = uwsgi_malloc(sizeof(char *) * counter);
+		vassal_argv = uwsgi_malloc(sizeof(char *) * counter);
 		// set args
-		argv[0] = uwsgi.binary_path;
+		vassal_argv[0] = uwsgi.binary_path;
 
 		if (uwsgi.emperor_broodlord) {
 			colon = strchr(name, ':');
@@ -319,29 +353,31 @@ void emperor_add(char *name, time_t born, char *config, uint32_t config_size) {
 			}
 		}
 		if (!strcmp(name + (strlen(name) - 4), ".xml"))
-			argv[1] = "--xml";
+			vassal_argv[1] = "--xml";
 		if (!strcmp(name + (strlen(name) - 4), ".ini"))
-			argv[1] = "--ini";
+			vassal_argv[1] = "--ini";
 		if (!strcmp(name + (strlen(name) - 4), ".yml"))
-			argv[1] = "--yaml";
+			vassal_argv[1] = "--yaml";
 		if (!strcmp(name + (strlen(name) - 5), ".yaml"))
-			argv[1] = "--yaml";
+			vassal_argv[1] = "--yaml";
 		if (!strcmp(name + (strlen(name) - 3), ".js"))
-			argv[1] = "--json";
+			vassal_argv[1] = "--json";
+		if (!strcmp(name + (strlen(name) - 5), ".json"))
+			vassal_argv[1] = "--json";
 
 		if (colon) {
 			colon[0] = ':';
 		}
-		argv[2] = name;
+		vassal_argv[2] = name;
 		counter = 3;
 		uct = uwsgi.vassals_templates;
         	while(uct) {
-			argv[counter] = "--inherit";
-			argv[counter+1] = uct->filename;
+			vassal_argv[counter] = "--inherit";
+			vassal_argv[counter+1] = uct->filename;
 			counter+=2;
 			uct = uct->next;
 		}
-		argv[counter] = NULL;
+		vassal_argv[counter] = NULL;
 
 		// close all of the unneded fd
 		for(i=3;i<sysconf(_SC_OPEN_MAX);i++) {
@@ -360,7 +396,7 @@ void emperor_add(char *name, time_t born, char *config, uint32_t config_size) {
 		}
 
 		// start !!!
-		if (execvp(argv[0], argv)) {
+		if (execvp(vassal_argv[0], vassal_argv)) {
 			uwsgi_error("execvp()");
 		}
 		uwsgi_log("is the uwsgi binary in your system PATH ?\n");
@@ -400,6 +436,8 @@ void emperor_loop() {
 	int interesting_fd;
 	char notification_message[64];
 
+	uwsgi.emperor_stats_fd = -1;
+
 	signal(SIGPIPE, SIG_IGN);
 	uwsgi_unix_signal(SIGINT, royal_death);
         uwsgi_unix_signal(SIGTERM, royal_death);
@@ -419,6 +457,23 @@ void emperor_loop() {
 	else {
 		uwsgi_log("*** starting uWSGI Emperor ***\n");
 	}
+
+	if (uwsgi.emperor_stats) {
+                char *tcp_port = strchr(uwsgi.emperor_stats, ':');
+                if (tcp_port) {
+                        // disable deferred accept for this socket
+                        int current_defer_accept = uwsgi.no_defer_accept;
+                        uwsgi.no_defer_accept = 1;
+                        uwsgi.emperor_stats_fd = bind_to_tcp(uwsgi.emperor_stats, uwsgi.listen_queue, tcp_port);
+                        uwsgi.no_defer_accept = current_defer_accept;
+                }
+                else {
+                        uwsgi.emperor_stats_fd = bind_to_unix(uwsgi.emperor_stats, uwsgi.listen_queue, uwsgi.chmod_socket, uwsgi.abstract_socket);
+                }
+
+                event_queue_add_fd_read(emperor_queue, uwsgi.emperor_stats_fd);
+                uwsgi_log("*** Emperor stats server enabled on %s fd: %d ***\n", uwsgi.emperor_stats, uwsgi.emperor_stats_fd);
+        }
 
 	amqp_port = strchr(uwsgi.emperor_dir, ':');
 
@@ -459,7 +514,12 @@ reconnect:
 			uwsgi_error("glob()");
 			exit(1);
 		}
-		emperor_absolute_dir = realpath(".", NULL);
+		globfree(&g);
+		emperor_absolute_dir = uwsgi_malloc(PATH_MAX+1);
+		if (realpath(".", emperor_absolute_dir) == NULL) {
+			uwsgi_error("realpath()");
+			exit(1);
+		}
 	}
 
 	ui = &ui_base;
@@ -517,7 +577,7 @@ reconnect:
                                         }
                                         else {
 						if (msgsize > 0) {
-                                                	emperor_add(config_file, time(NULL), config, msgsize);
+                                                	emperor_add(config_file, time(NULL), config, msgsize, 0, 0);
 						}
                                         }
 
@@ -554,13 +614,16 @@ reconnect:
 						emperor_respawn(ui_current, time(NULL));
 					}
 					else {
-						emperor_add(config_file, time(NULL), NULL, 0);
+						emperor_add(config_file, time(NULL), NULL, 0, 0, 0);
 					}
 
 					free(config_file);
 				}
 				}
 			}
+			else if (uwsgi.emperor_stats && uwsgi.emperor_stats_fd > -1 && interesting_fd == uwsgi.emperor_stats_fd) {
+                               	emperor_send_stats(uwsgi.emperor_stats_fd);
+                        }
 			else {
 				ui_current = emperor_get_by_fd(interesting_fd);
 				if (ui_current) {
@@ -583,13 +646,13 @@ reconnect:
 						else if (byte == 30 && uwsgi.emperor_broodlord > 0 && uwsgi.emperor_broodlord_count < uwsgi.emperor_broodlord) {
 							uwsgi_log("[emperor] going in broodlord mode: launching zergs for %s\n", ui_current->name);
 							char *zerg_name = uwsgi_concat3(ui_current->name,":","zerg");
-							emperor_add(zerg_name, time(NULL), NULL, 0);
+							emperor_add(zerg_name, time(NULL), NULL, 0, ui_current->uid, ui_current->gid);
 							free(zerg_name);
 						}
 					}
 				}
 				else {
-					uwsgi_log("unrecognized event on fd %d\n", interesting_fd);
+					uwsgi_log("[emperor] unrecognized vassal event on fd %d\n", interesting_fd);
 					event_queue_del_fd(emperor_queue, interesting_fd, event_queue_read());
 					close(interesting_fd);
 				}
@@ -604,7 +667,8 @@ reconnect:
 					!strcmp(de->d_name + (strlen(de->d_name) - 4), ".ini") ||
 					!strcmp(de->d_name + (strlen(de->d_name) - 4), ".yml") ||
 					!strcmp(de->d_name + (strlen(de->d_name) - 5), ".yaml") ||
-					!strcmp(de->d_name + (strlen(de->d_name) - 3), ".js")
+					!strcmp(de->d_name + (strlen(de->d_name) - 3), ".js") ||
+					!strcmp(de->d_name + (strlen(de->d_name) - 5), ".json")
 					) {
 
 
@@ -620,13 +684,21 @@ reconnect:
 					ui_current = emperor_get(de->d_name);
 
 					if (ui_current) {
+						// check if uid or gid are changed, in such case, sotp the instance
+						if (uwsgi.emperor_tyrant) {
+							if (st.st_uid != ui_current->uid || st.st_gid != ui_current->gid) {
+								uwsgi_log("!!! permissions of file %s changed. stopping the instance... !!!\n"); 
+								emperor_stop(ui_current);	
+								continue;
+							}	
+						}
 						// check if mtime is changed and the uWSGI instance must be reloaded
 						if (st.st_mtime > ui_current->last_mod) {
 							emperor_respawn(ui_current, st.st_mtime);
 						}
 					}
 					else {
-						emperor_add(de->d_name, st.st_mtime, NULL, 0);
+						emperor_add(de->d_name, st.st_mtime, NULL, 0, st.st_uid, st.st_gid);
 					}
 				}
 			}
@@ -643,6 +715,7 @@ reconnect:
 					!strcmp(g.gl_pathv[i] + (strlen(g.gl_pathv[i]) - 4), ".ini") ||
 					!strcmp(g.gl_pathv[i] + (strlen(g.gl_pathv[i]) - 4), ".yml") ||
 					!strcmp(g.gl_pathv[i] + (strlen(g.gl_pathv[i]) - 3), ".js") ||
+					!strcmp(g.gl_pathv[i] + (strlen(g.gl_pathv[i]) - 5), ".json") ||
 					!strcmp(g.gl_pathv[i] + (strlen(g.gl_pathv[i]) - 5), ".yaml")
 					) {
 
@@ -659,17 +732,26 @@ reconnect:
 					ui_current = emperor_get(g.gl_pathv[i]);
 
 					if (ui_current) {
+						// check if uid or gid are changed, in such case, sotp the instance
+                                                if (uwsgi.emperor_tyrant) {
+                                                        if (st.st_uid != ui_current->uid || st.st_gid != ui_current->gid) {
+                                                                uwsgi_log("!!! permissions of file %s changed. stopping the instance... !!!\n");
+                                                                emperor_stop(ui_current);
+                                                                continue;
+                                                        }
+                                                }
 						// check if mtime is changed and the uWSGI instance must be reloaded
 						if (st.st_mtime > ui_current->last_mod) {
 							emperor_respawn(ui_current, st.st_mtime);
 						}
 					}
 					else {
-						emperor_add(g.gl_pathv[i], st.st_mtime, NULL, 0);
+						emperor_add(g.gl_pathv[i], st.st_mtime, NULL, 0, st.st_uid, st.st_gid);
 					}
 				}
 
 			}
+			globfree(&g);
 		}
 		}
 
@@ -729,7 +811,7 @@ reconnect:
 					}
 					else {
 						// UNSAFE
-						emperor_add(ui_current->name, ui_current->last_mod, ui_current->config, ui_current->config_len);
+						emperor_add(ui_current->name, ui_current->last_mod, ui_current->config, ui_current->config_len, ui_current->uid, ui_current->gid);
 						emperor_del(ui_current);
 					}
 					break;
@@ -746,5 +828,75 @@ reconnect:
 
 
 	}
+
+}
+
+#define stats_send_llu(x, y) fprintf(output, x, (long long unsigned int) y)
+#define stats_send(x, y) fprintf(output, x, y)
+
+void emperor_send_stats(int fd) {
+
+        struct sockaddr_un client_src;
+        socklen_t client_src_len = 0;
+        int client_fd = accept(fd, (struct sockaddr *) &client_src, &client_src_len);
+        if (client_fd < 0) {
+                uwsgi_error("accept()");
+                return;
+        }
+
+        FILE *output = fdopen(client_fd, "w");
+        if (!output) {
+                uwsgi_error("fdopen()");
+                close(client_fd);
+                return;
+        }
+
+        stats_send("{ \"version\": \"%s\",\n", UWSGI_VERSION);
+
+        fprintf(output,"\"pid\": %d,\n", (int)(getpid()));
+        fprintf(output,"\"uid\": %d,\n", (int)(getuid()));
+        fprintf(output,"\"gid\": %d,\n", (int)(getgid()));
+
+	char *cwd = uwsgi_get_cwd();
+        stats_send("\"cwd\": \"%s\",\n", cwd);
+        free(cwd);
+
+	stats_send("\"emperor\": \"%s\",\n", uwsgi.emperor_dir);
+
+        fprintf(output,"\"emperor_tyrant\": %d,\n", uwsgi.emperor_tyrant);
+
+
+        fprintf(output, "\"vassals\": [\n");
+
+	struct uwsgi_instance *c_ui = ui->ui_next;
+
+        while (c_ui) {
+                fprintf(output,"\t{");
+                stats_send("\"id\": \"%s\", ", c_ui->name);
+                fprintf(output,"\"pid\": %d, ", (int) c_ui->pid);
+
+		stats_send_llu( "\"born\": %llu, ", c_ui->born);
+		stats_send_llu( "\"last_mod\": %llu, ", c_ui->last_mod);
+
+                fprintf(output,"\"loyal\": %d, ", c_ui->loyal);
+                fprintf(output,"\"zerg\": %d, ", c_ui->zerg);
+
+                fprintf(output,"\"uid\": %d, ", (int)c_ui->uid);
+                fprintf(output,"\"gid\": %d, ", (int)c_ui->gid);
+
+		stats_send_llu( "\"respawns\": %llu ", c_ui->respawns);
+        	c_ui = c_ui->ui_next;
+
+		if (c_ui) {
+                	fprintf(output,"},\n");
+                }
+                else {
+                	fprintf(output,"}\n");
+                }
+        }
+
+
+	fprintf(output,"]}\n");
+        fclose(output);
 
 }

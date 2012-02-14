@@ -15,9 +15,23 @@
 #define LONG_ARGS_RELOAD_OS_ENV		LONG_ARGS_PYTHON_BASE + 5
 #define LONG_ARGS_PYIMPORT		LONG_ARGS_PYTHON_BASE + 6
 #define LONG_ARGS_POST_PYMODULE_ALIAS   LONG_ARGS_PYTHON_BASE + 7
+#define LONG_ARGS_WEB3			LONG_ARGS_PYTHON_BASE + 8
+#define LONG_ARGS_PUMP			LONG_ARGS_PYTHON_BASE + 9
+#define LONG_ARGS_WSGI_LITE		LONG_ARGS_PYTHON_BASE + 10
+#define LONG_ARGS_PYSHELL		LONG_ARGS_PYTHON_BASE + 11
+#define LONG_ARGS_SPOOLER_PYIMPORT	LONG_ARGS_PYTHON_BASE + 12
+#define LONG_ARGS_PYTHON_RUN		LONG_ARGS_PYTHON_BASE + 13
+#define LONG_ARGS_SHARED_PYIMPORT	LONG_ARGS_PYTHON_BASE + 14
+
+#define PYTHON_APP_TYPE_WSGI		0
+#define PYTHON_APP_TYPE_WEB3		1
+#define PYTHON_APP_TYPE_WSGI2		2
+#define PYTHON_APP_TYPE_PUMP		3
+#define PYTHON_APP_TYPE_WSGI_LITE	4
 
 #if PY_MINOR_VERSION == 4 && PY_MAJOR_VERSION == 2
 #define Py_ssize_t ssize_t
+#define UWSGI_PYTHON_OLD
 #endif
 
 #if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION < 7
@@ -83,6 +97,18 @@ PyAPI_FUNC(PyObject *) PyMarshal_ReadObjectFromString(char *, Py_ssize_t);
 
 #define LOADER_MAX              8
 
+#define UWSGI_PY_READLINE_BUFSIZE 1024
+
+typedef struct uwsgi_Input {
+        PyObject_HEAD
+        char readline[UWSGI_PY_READLINE_BUFSIZE];
+        size_t readline_size;
+        size_t readline_max_size;
+        size_t readline_pos;
+        size_t pos;
+        struct wsgi_request *wsgi_req;
+} uwsgi_Input;
+
 struct uwsgi_python {
 
 	char *home;
@@ -104,8 +130,12 @@ struct uwsgi_python {
 
 	char *test_module;
 
+	int pyshell;
+
 	struct uwsgi_string_list *python_path;
 	struct uwsgi_string_list *import_list;
+	struct uwsgi_string_list *shared_import_list;
+	struct uwsgi_string_list *spooler_import_list;
 	struct uwsgi_string_list *post_pymodule_alias;
 
 	PyObject *loader_dict;
@@ -116,6 +146,9 @@ struct uwsgi_python {
 	char *paste;
 	char *eval;
 
+	char *web3;
+	char *pump;
+	char *wsgi_lite;
 
 	char *callable;
 
@@ -152,6 +185,10 @@ struct uwsgi_python {
 	void (*extension)(void);
 
 	int reload_os_env;
+
+	PyObject *after_req_hook;
+	PyObject *after_req_hook_args;
+
 };
 
 
@@ -165,7 +202,7 @@ void uwsgi_paste_config(char *);
 void uwsgi_file_config(char *);
 void uwsgi_eval_config(char *);
 
-int init_uwsgi_app(int, void *, struct wsgi_request *wsgi_req, PyThreadState *);
+int init_uwsgi_app(int, void *, struct wsgi_request *, PyThreadState *, int);
 
 
 PyObject *py_eventfd_read(PyObject *, PyObject *);
@@ -174,12 +211,10 @@ PyObject *py_eventfd_write(PyObject *, PyObject *);
 
 int manage_python_response(struct wsgi_request *);
 int uwsgi_python_call(struct wsgi_request *, PyObject *, PyObject *);
-PyObject *python_call(PyObject *, PyObject *, int);
+PyObject *python_call(PyObject *, PyObject *, int, struct wsgi_request *);
 
 #ifdef UWSGI_SENDFILE
 PyObject *py_uwsgi_sendfile(PyObject *, PyObject *);
-ssize_t uwsgi_sendfile(struct wsgi_request *);
-ssize_t uwsgi_do_sendfile(int, int, size_t, size_t, off_t*, int);
 #endif
 
 PyObject *py_uwsgi_write(PyObject *, PyObject *);
@@ -187,10 +222,11 @@ PyObject *py_uwsgi_spit(PyObject *, PyObject *);
 
 void init_pyargv(void);
 
-#ifdef UWSGI_WEB3
 void *uwsgi_request_subhandler_web3(struct wsgi_request *, struct uwsgi_app *);
 int uwsgi_response_subhandler_web3(struct wsgi_request *);
-#endif
+
+void *uwsgi_request_subhandler_pump(struct wsgi_request *, struct uwsgi_app *);
+int uwsgi_response_subhandler_pump(struct wsgi_request *);
 
 PyObject *uwsgi_uwsgi_loader(void *);
 PyObject *uwsgi_dyn_loader(void *);
@@ -220,20 +256,29 @@ void init_uwsgi_module_spooler(PyObject *);
 void init_uwsgi_module_sharedarea(PyObject *);
 void init_uwsgi_module_cache(PyObject *);
 void init_uwsgi_module_queue(PyObject *);
+void init_uwsgi_module_snmp(PyObject *);
 
 PyObject *uwsgi_pyimport_by_filename(char *, char *);
 
 void threaded_swap_ts(struct wsgi_request *, struct uwsgi_app *);
 void simple_swap_ts(struct wsgi_request *, struct uwsgi_app *);
+void simple_threaded_swap_ts(struct wsgi_request *, struct uwsgi_app *);
 void threaded_reset_ts(struct wsgi_request *, struct uwsgi_app *);
 void simple_reset_ts(struct wsgi_request *, struct uwsgi_app *);
+void simple_threaded_reset_ts(struct wsgi_request *, struct uwsgi_app *);
 
 int uwsgi_python_profiler_call(PyObject *, PyFrameObject *, int, PyObject *);
 
 void uwsgi_python_reset_random_seed(void);
 
-#ifdef __linux__
-#ifndef PYTHREE
-int uwsgi_init_symbol_import(void);
+char *uwsgi_pythonize(char *);
+
+#ifdef UWSGI_PYPY
+#undef UWSGI_MINTERPRETERS
 #endif
+
+#define uwsgi_pyexit {PyErr_Print();exit(1);}
+
+#ifdef __linux__
+int uwsgi_init_symbol_import(void);
 #endif

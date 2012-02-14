@@ -56,9 +56,11 @@ ssize_t uwsgi_do_sendfile(int sockfd, int filefd, size_t filesize, size_t chunk,
 		sf_ret = sendfile(filefd, sockfd, 0, 0, NULL, &sf_len, 0);
 	}
 
-	if (sf_ret) {
-		uwsgi_error("sendfile()");
-		return 0;
+	if (sf_ret < 0) {
+		if (errno != EAGAIN) {
+			uwsgi_error("sendfile()");
+			return 0;
+		}
 	}
 
 	return sf_len;
@@ -104,6 +106,7 @@ ssize_t uwsgi_do_sendfile(int sockfd, int filefd, size_t filesize, size_t chunk,
 #else
 	static size_t nosf_buf_size = 0;
 	static char *nosf_buf;
+	char *nosf_buf2;
 
 	ssize_t jlen = 0;
 	ssize_t rlen = 0;
@@ -113,7 +116,16 @@ ssize_t uwsgi_do_sendfile(int sockfd, int filefd, size_t filesize, size_t chunk,
 		nosf_buf = malloc(chunk);
 	}
 	else if (chunk != nosf_buf_size) {
-		nosf_buf = realloc(nosf_buf, chunk);
+		nosf_buf2 = realloc(nosf_buf, chunk);
+		if (!nosf_buf2) {
+			free(nosf_buf);
+		}
+		nosf_buf = nosf_buf2;
+	}
+
+	if (!nosf_buf) {
+		uwsgi_error("sendfile malloc()/realloc()");
+		return 0;
 	}
 
 	nosf_buf_size = chunk;

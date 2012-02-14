@@ -81,7 +81,7 @@ void *event_queue_alloc(int nevents) {
 int event_queue_interesting_fd(void *events, int id) {
 	port_event_t *pe = (port_event_t *) events;
 	if (pe[id].portev_source == PORT_SOURCE_FILE || pe[id].portev_source == PORT_SOURCE_TIMER) {
-                return (int) pe[id].portev_user;
+                return (long) pe[id].portev_user;
         }
 
 	return (int) pe[id].portev_object;
@@ -149,7 +149,7 @@ int event_queue_wait(int eq, int timeout, int *interesting_fd) {
 
 
 	if (pe.portev_source == PORT_SOURCE_FILE || pe.portev_source == PORT_SOURCE_TIMER) {
-        	*interesting_fd = (int) pe.portev_user;
+        	*interesting_fd = (long) pe.portev_user;
 	}
 	else {
 		*interesting_fd = (int) pe.portev_object;
@@ -327,11 +327,13 @@ int event_queue_fd_write_to_read(int eq, int fd) {
 
 	struct kevent kev;
 
+#ifndef __FreeBSD__
         EV_SET(&kev, fd, EVFILT_WRITE, EV_DISABLE, 0, 0, 0);
         if (kevent(eq, &kev, 1, NULL, 0, NULL) < 0) {
                 uwsgi_error("kevent()");
                 return -1;
         }
+#endif
 
         EV_SET(&kev, fd, EVFILT_READ, EV_ADD, 0, 0, 0);
         if (kevent(eq, &kev, 1, NULL, 0, NULL) < 0) {
@@ -476,7 +478,7 @@ int event_queue_add_file_monitor(int eq, char *filename, int *id) {
 	fo.fo_ctime = st.st_ctim;
 	
 	fmon_id++;
-	if (port_associate(eq, PORT_SOURCE_FILE, (uintptr_t) &fo, FILE_MODIFIED|FILE_ATTRIB, (void *) fmon_id)) {
+	if (port_associate(eq, PORT_SOURCE_FILE, (uintptr_t) &fo, FILE_MODIFIED|FILE_ATTRIB, (void *) (long) fmon_id)) {
 		uwsgi_error("port_associate()");
 		return -1;
 	}
@@ -506,7 +508,7 @@ struct uwsgi_fmon *event_queue_ack_file_monitor(int eq, int id) {
         			fo.fo_atime = st.st_atim;
         			fo.fo_mtime = st.st_mtim;
         			fo.fo_ctime = st.st_ctim;
-				if (port_associate(eq, PORT_SOURCE_FILE, (uintptr_t) &fo, FILE_MODIFIED|FILE_ATTRIB, (void *)id)) {
+				if (port_associate(eq, PORT_SOURCE_FILE, (uintptr_t) &fo, FILE_MODIFIED|FILE_ATTRIB, (void *)(long)id)) {
                 			uwsgi_error("port_associate()");
                 			return NULL;
         			}
@@ -565,6 +567,16 @@ struct uwsgi_fmon *event_queue_ack_file_monitor(int eq, int id) {
 #endif
 
 #ifdef UWSGI_EVENT_FILEMONITOR_USE_INOTIFY
+
+
+#ifdef OBSOLETE_LINUX_KERNEL
+int event_queue_add_file_monitor(int eq, char *filename, int *id) {
+	return -1;
+}
+struct uwsgi_fmon *event_queue_ack_file_monitor(int eq, int id) {
+	return NULL;
+}
+#else
 #include <sys/inotify.h>
 
 int event_queue_add_file_monitor(int eq, char *filename, int *id) {
@@ -657,6 +669,8 @@ struct uwsgi_fmon *event_queue_ack_file_monitor(int eq, int id) {
 	return NULL;
 	
 }
+
+#endif
 #endif
 
 #ifdef UWSGI_EVENT_TIMER_USE_TIMERFD
@@ -687,13 +701,23 @@ enum
 
 
 static int timerfd_create (clockid_t __clock_id, int __flags) {
+#ifdef __amd64__
+	return syscall(283, __clock_id, __flags);
+#elif defined(__i386__)
 	return syscall(322, __clock_id, __flags);
+#else
+	return -1;
+#endif
 }
 
 static int timerfd_settime (int __ufd, int __flags,
                             __const struct itimerspec *__utmr,
                             struct itimerspec *__otmr) {
+#ifdef __amd64__
+	return syscall(286, __ufd, __flags, __utmr, __otmr);
+#elif defined(__i386__)
 	return syscall(325, __ufd, __flags, __utmr, __otmr);
+#endif
 }
 #endif
 
@@ -765,7 +789,7 @@ int event_queue_add_timer(int eq, int *id, int sec) {
 	timer_id++;
 
 	pnotif.portnfy_port = eq;
-	pnotif.portnfy_user = (void *) timer_id;
+	pnotif.portnfy_user = (void *) (long) timer_id;
 
 	sigev.sigev_notify = SIGEV_PORT;
 	sigev.sigev_value.sival_ptr = &pnotif;

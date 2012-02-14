@@ -2,6 +2,43 @@
 
 extern struct uwsgi_server uwsgi;
 
+char *uwsgi_getsockname(int fd) {
+
+	socklen_t socket_type_len = sizeof(struct sockaddr_un);
+	union uwsgi_sockaddr usa;
+	union uwsgi_sockaddr_ptr gsa;
+	char computed_port[6];
+        char ipv4a[INET_ADDRSTRLEN + 1];
+
+        gsa.sa = (struct sockaddr *) &usa;
+
+        if (!getsockname(fd, gsa.sa, &socket_type_len)) {
+        	if (gsa.sa->sa_family == AF_UNIX) {
+                	if (usa.sa_un.sun_path[0] == 0) {
+				return uwsgi_concat2("@", usa.sa_un.sun_path+1);
+			}
+			else {
+				return uwsgi_str(usa.sa_un.sun_path);
+			}
+                }
+                else {
+                        memset(ipv4a, 0, INET_ADDRSTRLEN + 1);
+                        memset(computed_port, 0, 6);
+                        if (snprintf(computed_port, 6, "%d", ntohs(gsa.sa_in->sin_port)) > 0) {
+				if (inet_ntop(AF_INET, (const void *) &gsa.sa_in->sin_addr.s_addr, ipv4a, INET_ADDRSTRLEN)) {
+                                        if (!strcmp("0.0.0.0", ipv4a)) {
+                                                return uwsgi_concat2(":", computed_port);
+                                        }
+                                        else {
+                                                return uwsgi_concat3(ipv4a, ":", computed_port);
+                                        }
+				}
+			}
+                }
+	}
+	return NULL;
+}
+
 int bind_to_unix(char *socket_name, int listen_queue, int chmod_socket, int abstract_socket) {
 
 	int serverfd;
@@ -412,7 +449,7 @@ char *generate_socket_name(char *socket_name) {
 				if (!strncmp(socket_name, new_addr, strlen(socket_name))) {
 					asterisk[0] = '*';
 					new_socket = uwsgi_concat3(new_addr, ":", tcp_port + 1);
-					uwsgi_log("found %s for %s on interface %s\n", new_socket, socket_name, ifa->ifa_name);
+					uwsgi_log("[uwsgi-autoip] found %s for %s on interface %s\n", new_socket, socket_name, ifa->ifa_name);
 					freeifaddrs(ifap);
 					return new_socket;
 				}
@@ -460,22 +497,35 @@ socklen_t socket_to_un_addr(char *socket_name, struct sockaddr_un *sun_addr) {
         return sizeof(sun_addr->sun_family)+len;
 }
 
-socklen_t socket_to_in_addr(char *socket_name, char *port, struct sockaddr_in *sin_addr) {
+socklen_t socket_to_in_addr(char *socket_name, char *port, int portn, struct sockaddr_in *sin_addr) {
 
 	memset(sin_addr, 0, sizeof(struct sockaddr_in));
 	
 	sin_addr->sin_family = AF_INET;
 	if (port) {
-		port[0] = 0;
+		*port = 0;
 		sin_addr->sin_port = htons(atoi(port + 1));
+	}
+	else {
+		sin_addr->sin_port = htons(portn);
 	}
 
 	if (socket_name[0] == 0) {
                 sin_addr->sin_addr.s_addr = INADDR_ANY;
         }
         else {
-                sin_addr->sin_addr.s_addr = inet_addr(socket_name);
+		char *resolved = uwsgi_resolve_ip(socket_name);
+		if (resolved) {
+                	sin_addr->sin_addr.s_addr = inet_addr(resolved);
+		}
+		else {
+                	sin_addr->sin_addr.s_addr = inet_addr(socket_name);
+		}
         }
+
+	if (port) {
+		*port = ':';
+	}
 
 	return sizeof(struct sockaddr_in);
 	
@@ -487,7 +537,7 @@ int bind_to_tcp(char *socket_name, int listen_queue, char *tcp_port) {
 	struct sockaddr_in uws_addr;
 	int reuse = 1;
 
-	socket_to_in_addr(socket_name, tcp_port, &uws_addr);
+	socket_to_in_addr(socket_name, tcp_port, 0, &uws_addr);
 
 	serverfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (serverfd < 0) {
@@ -749,6 +799,20 @@ struct uwsgi_socket *uwsgi_new_socket(char *name) {
 
 	if (!name) return uwsgi_sock;
 
+	if (name[0] == '=') {
+		int shared_socket = atoi(uwsgi_sock->name+1);
+                if (shared_socket >= 0) {
+                	struct uwsgi_socket *uss = uwsgi_get_shared_socket_by_num(shared_socket);
+                        if (!uss) {
+                        	uwsgi_log("unable to use shared socket %d\n", shared_socket);
+				exit(1);
+                        }
+			uwsgi_sock->bound = 1;
+			uwsgi_sock->shared = 1;
+			uwsgi_sock->from_shared = shared_socket;
+			return uwsgi_sock;
+                }
+	}
 	char *tcp_port = strchr(name, ':');
 	if (tcp_port) {
 		// INET socket, check for 0 port
@@ -951,6 +1015,29 @@ int uwsgi_get_shared_socket_fd_by_num(int num) {
 	return -1;
 }
 
+struct uwsgi_socket *uwsgi_get_shared_socket_by_num(int num) {
+
+        int counter = 0;
+
+        struct uwsgi_socket *found_sock = NULL, *uwsgi_sock = uwsgi.shared_sockets;
+
+        while(uwsgi_sock) {
+                if (counter == num) {
+                        found_sock = uwsgi_sock;
+                        break;
+                }
+                counter++;
+                uwsgi_sock = uwsgi_sock->next;
+        }
+
+        if (found_sock) {
+                return found_sock;
+        }
+
+        return NULL;
+}
+
+
 void uwsgi_add_sockets_to_queue(int queue) {
 
 	struct uwsgi_socket *uwsgi_sock = uwsgi.sockets;
@@ -969,5 +1056,18 @@ void uwsgi_del_sockets_from_queue(int queue) {
                         uwsgi_sock = uwsgi_sock->next;
                 }
 
+}
+
+int uwsgi_is_bad_connection(int fd) {
+
+	int soopt = 0;
+	socklen_t solen = sizeof(int) ;
+
+	if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void *) (&soopt), &solen) < 0) {
+		return -1;
+	}
+
+	// will be 0 if all ok
+	return soopt;
 }
 

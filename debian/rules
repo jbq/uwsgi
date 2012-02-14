@@ -633,14 +633,6 @@ binary-install/python-uwsgicc::
 		uwsgicc/templates uwsgicc/static \
 		usr/share/$(cdbs_curpkg)
 
-	$(RM) $(CURDIR)/debian/$(cdbs_curpkg)/usr/share/$(cdbs_curpkg)/static/js/jquery*.js
-	dh_link -p $(cdbs_curpkg) \
-		usr/share/javascript/jquery/jquery.min.js \
-		usr/share/$(cdbs_curpkg)/static/js/jquery.min.js
-	dh_link -p $(cdbs_curpkg) \
-		usr/share/javascript/jquery-ui/jquery-ui.min.js \
-		usr/share/$(cdbs_curpkg)/static/js/jquery-ui.min.js
-
 # dh_python2 (as for 2011-05-26) fails at dealing with original symlinks in
 # dist-packages.
 #

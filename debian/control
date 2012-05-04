@@ -469,6 +469,18 @@ Description: RPC plugin for uWSGI
  .
  This package provides RPC plugin for uWSGI.
 
+Package: uwsgi-plugin-syslog
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, uwsgi-core (= ${binary:Version})
+Description: RPC plugin for uWSGI
+ uWSGI presents a complete stack for networked/clustered web applications,
+ implementing message/object passing, caching, RPC and process management.
+ It is designed to be fully modular. This means that different plugins can be
+ used in order to add compatibility with tons of different technology on top of
+ the same core.
+ .
+ This package provides a syslog plugin for uWSGI.
+
 Package: uwsgi-plugin-ugreen
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, uwsgi-core (= ${binary:Version})

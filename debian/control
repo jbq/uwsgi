@@ -22,7 +22,7 @@ Build-Depends:
  libzmq-dev,
  pkg-config,
  python,
- python-all-dev,
+ python-dev,
  python-greenlet-dev [amd64 i386 mips powerpc s390],
  python3-all-dev,
  openjdk-6-jdk,

@@ -1,3 +1,14 @@
+uwsgi (1.0.4-1ubuntu1) unstable; urgency=low
+
+  [ Jean-Baptiste Quenot ]
+  * Setup ignores
+  * Do not depend on all versions of Python to ease cross-release builds
+  * Add syslog plugin (unbelievable!)
+
+  [ ebuzzing ]
+
+ -- ebuzzing <ebuzzing@ebvm-jbq>  Fri, 04 May 2012 16:30:58 +0200
+
 uwsgi (1.0.4-1) unstable; urgency=low
 
   * Imported Upstream version 1.0.4

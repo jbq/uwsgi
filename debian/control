@@ -44,7 +44,7 @@ Build-Depends:
  libkvm-dev [kfreebsd-any],
  pkg-config,
  python,
- python-all-dev,
+ python-dev,
  python-greenlet-dev [amd64 armel armhf hurd-i386 i386 kfreebsd-amd64 kfreebsd-i386 mips mipsel powerpc s390 s390x sparc],
  python3-all-dev,
  openjdk-6-jdk [amd64 armel armhf i386 ia64 mips mipsel powerpc s390 s390x sparc],

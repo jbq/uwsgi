@@ -1,3 +1,12 @@
+uwsgi (1.0.4-1ubuntu3) UNRELEASED; urgency=low
+
+  [ Jean-Baptiste Quenot ]
+  * Remove spurious no-op command in init script
+
+  [ ebuzzing ]
+
+ -- ebuzzing <ebuzzing@ebvm-jbq>  Thu, 10 May 2012 16:14:13 +0200
+
 uwsgi (1.0.4-1ubuntu2) unstable; urgency=low
 
   [ Jean-Baptiste Quenot ]

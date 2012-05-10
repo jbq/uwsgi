@@ -1,3 +1,12 @@
+uwsgi (1.0.4-1ubuntu2) unstable; urgency=low
+
+  [ Jean-Baptiste Quenot ]
+  * Fix gh-116 Prevent uwsgi upgrade from restarting apps
+
+  [ ebuzzing ]
+
+ -- ebuzzing <ebuzzing@ebvm-jbq>  Thu, 10 May 2012 11:15:18 +0200
+
 uwsgi (1.0.4-1ubuntu1) unstable; urgency=low
 
   [ Jean-Baptiste Quenot ]

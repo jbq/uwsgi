@@ -95,6 +95,8 @@ files_instantiated_in_debian_dir = $(addprefix \
 # CDBS-specific variables
 # =======================
 
+DEB_DH_INSTALLINIT_ARGS = --no-start
+
 DEB_COMPRESS_EXCLUDE_uwsgi-core = .ini .lua .pl .png .psgi .py .ru .ws .xml \
                                   .yml
 DEB_COMPRESS_EXCLUDE_uwsgi-extra = .class .java .rb .c

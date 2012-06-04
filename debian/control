@@ -324,34 +324,6 @@ Description: HTTP server plugin for uWSGI
  .
  This package provides HTTP server plugin for uWSGI.
 
-Package: uwsgi-plugin-jvm-openjdk-6
-Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, uwsgi-core (= ${binary:Version}),
-  openjdk-6-jre-headless
-Description: Java plugin for uWSGI (OpenJDK 6)
- uWSGI presents a complete stack for networked/clustered web applications,
- implementing message/object passing, caching, RPC and process management.
- It is designed to be fully modular. This means that different plugins can be
- used in order to add compatibility with tons of different technology on top of
- the same core.
- .
- This package provides Java plugin for uWSGI (linked with OpenJDK Java 6
- runtime).
-
-Package: uwsgi-plugin-jwsgi-openjdk-6
-Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends},
- uwsgi-plugin-jvm-openjdk-6 (= ${binary:Version}), openjdk-6-jre-headless
-Description: JWSGI plugin for uWSGI (OpenJDK 6)
- uWSGI presents a complete stack for networked/clustered web applications,
- implementing message/object passing, caching, RPC and process management.
- It is designed to be fully modular. This means that different plugins can be
- used in order to add compatibility with tons of different technology on top of
- the same core.
- .
- This package provides JWSGI plugin for uWSGI (linked with OpenJDK Java 6
- runtime).
-
 Package: uwsgi-plugin-logsocket
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, uwsgi-core (= ${binary:Version})
@@ -363,32 +335,6 @@ Description: logsocket plugin for uWSGI
  the same core.
  .
  This package provides logsocket plugin for uWSGI.
-
-
-Package: uwsgi-plugin-lua5.1
-Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, uwsgi-core (= ${binary:Version})
-Description: Lua WSAPI plugin for uWSGI (Lua 5.1)
- uWSGI presents a complete stack for networked/clustered web applications,
- implementing message/object passing, caching, RPC and process management.
- It is designed to be fully modular. This means that different plugins can be
- used in order to add compatibility with tons of different technology on top of
- the same core.
- .
- This package provides Lua WSAPI plugin for uWSGI (linked with Lua 5.1
- runtime).
-
-Package: uwsgi-plugin-luajit
-Architecture: i386 amd64 kfreebsd-i386 armel
-Depends: ${shlibs:Depends}, ${misc:Depends}, uwsgi-core (= ${binary:Version})
-Description: Lua WSAPI plugin for uWSGI (LuaJIT)
- uWSGI presents a complete stack for networked/clustered web applications,
- implementing message/object passing, caching, RPC and process management.
- It is designed to be fully modular. This means that different plugins can be
- used in order to add compatibility with tons of different technology on top of
- the same core.
- .
- This package provides Lua WSAPI plugin for uWSGI (linked with LuaJIT runtime).
 
 Package: uwsgi-plugin-nagios
 Architecture: any

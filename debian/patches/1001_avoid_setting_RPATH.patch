@@ -1,0 +1,33 @@
+Description: Remove value assignments to environment variable LD_RUN_PATH
+ Value assignment to environment variable LD_RUN_PATH leads to setting RPATH in
+ compiled binary/shared library.
+ .
+ And then Lintian reports about error (E: binary-or-shlib-defines-rpath).
+Author: Leonid Borisenko <leo.borisenko@gmail.com>
+Author: Janos Guljas <janos@debian.org>
+Forwarded: not-needed
+Last-Update: 2013-04-24
+
+--- a/plugins/rack/uwsgiplugin.py
++++ b/plugins/rack/uwsgiplugin.py
+@@ -44,7 +44,6 @@
+ 
+ if has_shared == 'yes':
+     LDFLAGS.append('-L' + libpath )
+-    os.environ['LD_RUN_PATH'] = libpath
+     LIBS.append(os.popen(RUBYPATH + " -e \"require 'rbconfig';print '-l' + %s::CONFIG['RUBY_SO_NAME']\"" % rbconfig).read().rstrip())
+ else:
+     rubylibdir = os.popen(RUBYPATH + " -e \"require 'rbconfig';print RbConfig::CONFIG['rubylibdir']\"").read().rstrip()
+--- a/plugins/python/uwsgiplugin.py
++++ b/plugins/python/uwsgiplugin.py
+@@ -44,10 +44,8 @@
+     else:
+         try:
+             LDFLAGS.append("-L%s" % sysconfig.get_config_var('LIBDIR'))
+-            os.environ['LD_RUN_PATH'] = "%s" % (sysconfig.get_config_var('LIBDIR'))
+         except:
+             LDFLAGS.append("-L%s/lib" % sysconfig.PREFIX)
+-            os.environ['LD_RUN_PATH'] = "%s/lib" % sysconfig.PREFIX
+ 
+         LIBS.append('-lpython%s' % get_python_version())
+ else:

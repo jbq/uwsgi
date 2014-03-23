@@ -1,0 +1,29 @@
+Description: Preserve process name on reload
+ Function uwsgi_reload is using uwsgi.binary_path as first argument in
+ execvp(). If the daemon is started through a symlink, uwsgi_reload will
+ use that link's target and change the process name. With a different process
+ name start-stop-daemon, used in init scripts, is unable to control the
+ daemon.
+Author: Janos Guljas <janos@debian.org>
+Last-Update: 2013-04-23
+
+--- a/core/master_utils.c
++++ b/core/master_utils.c
+@@ -479,7 +479,7 @@
+ 
+ 	uwsgi_log("running %s\n", uwsgi.binary_path);
+ 	uwsgi_flush_logs();
+-	argv[0] = uwsgi.binary_path;
++	//argv[0] = uwsgi.binary_path;
+ 	//strcpy (argv[0], uwsgi.binary_path);
+ 	if (uwsgi.log_master) {
+ 		if (uwsgi.original_log_fd > -1) {
+@@ -493,7 +493,7 @@
+ 			close(uwsgi.shared->worker_log_pipe[1]);
+ 		}
+ 	}
+-	execvp(uwsgi.binary_path, argv);
++	execvp(argv[0], argv);
+ 	uwsgi_error("execvp()");
+ 	// never here
+ 	exit(1);

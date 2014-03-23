@@ -1,0 +1,1 @@
+LoadModule @@apache_module_name@@_module /usr/lib/apache2/modules/mod_@@module_name@@.so

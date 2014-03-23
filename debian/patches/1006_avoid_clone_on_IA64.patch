@@ -1,0 +1,80 @@
+Description: Avoid use of clone() on IA64 where apperently broken
+ Workaround for FTBFS on IA64:
+ https://buildd.debian.org/status/fetch.php?pkg=uwsgi&arch=ia64&ver=1.9.17.1-2&stamp=1380102648
+Author: Jonas Smedegaard <dr@jones.dk>
+Last-Update: 2013-09-26
+
+--- a/core/emperor.c
++++ b/core/emperor.c
+@@ -817,7 +817,7 @@
+ 	// TODO pre-start hook
+ 
+ 	// a new uWSGI instance will start 
+-#if defined(__linux__) && !defined(OBSOLETE_LINUX_KERNEL)
++#if defined(__linux__) && !defined(OBSOLETE_LINUX_KERNEL) && !defined(__ia64__)
+ 	if (uwsgi.emperor_clone) {
+ 		char stack[PTHREAD_STACK_MIN];
+ 		pid = clone((int (*)(void *))uwsgi_emperor_spawn_vassal, stack + PTHREAD_STACK_MIN, SIGCHLD | uwsgi.emperor_clone, (void *) n_ui);
+@@ -825,7 +825,7 @@
+ 	else {
+ #endif
+ 	pid = fork();
+-#if defined(__linux__) && !defined(OBSOLETE_LINUX_KERNEL)
++#if defined(__linux__) && !defined(OBSOLETE_LINUX_KERNEL) && !defined(__ia64__)
+ 	}
+ #endif
+ 	if (pid < 0) {
+--- a/core/uwsgi.c
++++ b/core/uwsgi.c
+@@ -2386,7 +2386,7 @@
+ 
+ 
+ 	// TODO pluginize basic Linux namespace support
+-#ifdef __linux__
++#if defined(__linux__) && !defined(__ia64__)
+ 	if (uwsgi.ns) {
+ 		linux_namespace_start((void *) uwsgi.argv);
+ 		// never here
+@@ -2394,7 +2394,7 @@
+ 	else {
+ #endif
+ 		uwsgi_start((void *) uwsgi.argv);
+-#ifdef __linux__
++#if defined(__linux__) && !defined(__ia64__)
+ 	}
+ #endif
+ 
+@@ -2408,7 +2408,7 @@
+ 
+ 	int i, j;
+ 
+-#ifdef __linux__
++#if defined(__linux__) && !defined(__ia64__)
+ 	uwsgi_set_cgroup();
+ 
+ 	if (uwsgi.ns) {
+--- a/uwsgi.h
++++ b/uwsgi.h
+@@ -3155,8 +3155,10 @@
+ int uwsgi_str4_num(char *);
+ 
+ #ifdef __linux__
++#ifndef __ia64__
+ 	void linux_namespace_start(void *);
+ 	void linux_namespace_jail(void);
++#endif
+ 	int uwsgi_netlink_veth(char *, char *);
+ 	int uwsgi_netlink_veth_attach(char *, pid_t);
+ 	int uwsgi_netlink_ifup(char *);
+--- a/uwsgiconfig.py
++++ b/uwsgiconfig.py
+@@ -530,7 +530,8 @@
+         report['kernel'] = uwsgi_os
+ 
+         if uwsgi_os == 'Linux':
+-            self.gcc_list.append('lib/linux_ns')
++            if uwsgi_cpu != 'ia64':
++                self.gcc_list.append('lib/linux_ns')
+             try:
+                 lk_ver = uwsgi_os_k.split('.')
+                 if int(lk_ver[0]) <= 2 and int(lk_ver[1]) <= 6 and int(lk_ver[2]) <= 9:

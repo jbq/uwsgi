@@ -1,0 +1,3 @@
+debian/uwsgi-files/etc/* etc
+debian/uwsgi-files/conf usr/share/uwsgi
+debian/uwsgi-files/init usr/share/uwsgi

@@ -1,0 +1,44 @@
+Description: echo full compilation commandlines to stdout
+Author: Jonas Smedegaard <dr@jones.dk>
+Last-Update: 2013-09-24
+
+--- a/uwsgiconfig.py
++++ b/uwsgiconfig.py
+@@ -86,7 +86,7 @@
+         (objfile, cmdline) = compile_queue.get()
+         if objfile:
+             print_lock.acquire()    
+-            print("[thread %d][%s] %s" % (num, GCC, objfile))
++            print("[thread %d] %s" % (num, cmdline))
+             print_lock.release()    
+             ret = os.system(cmdline)
+             if ret != 0:
+@@ -170,7 +170,7 @@
+ 
+ def push_command(objfile, cmdline):
+     if not compile_queue:
+-        print("[%s] %s" % (GCC, objfile))
++        print(cmdline)
+         ret = os.system(cmdline)
+         if ret != 0:
+             sys.exit(1)
+@@ -1293,7 +1293,7 @@
+         need_pic = ' -L. -luwsgi'
+ 
+     gccline = "%s%s %s -o %s.so %s %s %s %s" % (GCC, need_pic, shared_flag, plugin_dest, ' '.join(uniq_warnings(p_cflags)), ' '.join(gcc_list), ' '.join(uniq_warnings(p_ldflags)), ' '.join(uniq_warnings(p_libs)) )
+-    print("[%s] %s.so" % (GCC, plugin_dest))
++    print(gccline)
+ 
+     ret = os.system(gccline)
+     if ret != 0:
+@@ -1306,7 +1306,9 @@
+             for rp in requires:
+                 f.write("requires=%s\n" % rp)
+             f.close()
+-            os.system("objcopy %s.so --add-section uwsgi=.uwsgi_plugin_section %s.so" % (plugin_dest, plugin_dest))
++            objline = "objcopy %s.so --add-section uwsgi=.uwsgi_plugin_section %s.so" % (plugin_dest, plugin_dest)
++            print(objline)
++            os.system(objline)
+             os.unlink('.uwsgi_plugin_section')
+     except:
+         pass

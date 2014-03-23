@@ -1,0 +1,3 @@
+debian/uwsgi-core-docs-staging/examples
+debian/uwsgi-core-docs-staging/tests
+debian/uwsgi-core.init.d.custom

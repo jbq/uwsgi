@@ -1,0 +1,249 @@
+Description: preliminary support for Debian kFreeBSD
+Origin: upstream, https://github.com/unbit/uwsgi/commit/4b6030
+Author: Unbit <info@unbit.it>
+Reviewed-By: Jonas Smedegaard <dr@jones.dk>
+Forwarded: yes
+Last-Update: 2013-09-25
+
+diff --git a/core/mount.c b/core/mount.c
+index f1b2145..67d9390 100644
+--- a/core/mount.c
++++ b/core/mount.c
+@@ -102,7 +102,7 @@ uint64_t uwsgi_mount_flag(char *mflag) {
+ }
+ 
+ int uwsgi_mount(char *fs, char *what, char *where, char *flags) {
+-#ifdef __FreeBSD__
++#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+ 	struct iovec iov[6];
+ #endif
+ 	unsigned long mountflags = 0;
+@@ -121,7 +121,7 @@ int uwsgi_mount(char *fs, char *what, char *where, char *flags) {
+ parsed:
+ #ifdef __linux__
+ 	return mount(what, where, fs, mountflags, NULL);
+-#elif defined(__FreeBSD__)
++#elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+ 	iov[0].iov_base = "fstype";
+ 	iov[0].iov_len = 7;
+ 	iov[1].iov_base = fs;
+@@ -189,7 +189,7 @@ unmountable:
+ 		free(slashed);
+ 	}
+         return umount2(where, mountflags);
+-#elif defined(__FreeBSD__)
++#elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+ 	return unmount(where, mountflags);
+ #endif
+         return -1;
+diff --git a/core/offload.c b/core/offload.c
+index 8e0bfba..e3a663e 100644
+--- a/core/offload.c
++++ b/core/offload.c
+@@ -323,7 +323,7 @@ static int u_offload_sendfile_do(struct uwsgi_thread *ut, struct uwsgi_offload_r
+ 		if (event_queue_add_fd_write(ut->queue, uor->fd2)) return -1;
+ 		return 0;
+ 	}
+-#if defined(__linux__) || defined(__sun__)
++#if defined(__linux__) || defined(__sun__) || defined(__FreeBSD_kernel__)
+ 	ssize_t len = sendfile(uor->fd2, uor->fd, &uor->pos, 128 * 1024);
+ 	if (len > 0) {
+         	uor->written += len;
+diff --git a/core/sendfile.c b/core/sendfile.c
+index 88e0123..2299d40 100644
+--- a/core/sendfile.c
++++ b/core/sendfile.c
+@@ -20,7 +20,7 @@ ssize_t uwsgi_sendfile_do(int sockfd, int filefd, size_t pos, size_t len) {
+ 	int sf_ret = sendfile(filefd, sockfd, pos, &sf_len, NULL, 0);
+ 	if (sf_ret == 0 || (sf_ret == -1 && errno == EAGAIN)) return sf_len;
+ 	return -1;
+-#elif defined(__linux__) || defined(__sun__)
++#elif defined(__linux__) || defined(__sun__) || defined(__FreeBSD_kernel__)
+ 	off_t off = pos;
+ 	return sendfile(sockfd, filefd, &off, len);
+ #endif
+diff --git a/core/utils.c b/core/utils.c
+index a2fc937..21df5dd 100644
+--- a/core/utils.c
++++ b/core/utils.c
+@@ -360,7 +360,7 @@ void uwsgi_as_root() {
+ 		}
+ #endif
+ 
+-#if defined(__FreeBSD__)
++#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+                 if (uwsgi.jail && !uwsgi.reloads) {
+ 
+ 			struct jail ujail;
+@@ -2601,7 +2601,7 @@ char *uwsgi_get_binary_path(char *argvzero) {
+ 			return newbuf;
+ 		}
+ 	}
+-#elif defined(__FreeBSD__)
++#elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+ 	char *buf = uwsgi_malloc(uwsgi.page_size);
+ 	size_t len = uwsgi.page_size;
+ 	int mib[4];
+@@ -2992,7 +2992,7 @@ void uwsgi_set_processname(char *name) {
+ 	// end with \0
+ 	memset(uwsgi.orig_argv[0] + amount + 1 + (uwsgi.max_procname - (amount)), '\0', 1);
+ 
+-#elif defined(__FreeBSD__) || defined(__NetBSD__)
++#elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__NetBSD__)
+ 	if (uwsgi.procname_prefix) {
+ 		if (!uwsgi.procname_append) {
+ 			setproctitle("-%s%s", uwsgi.procname_prefix, name);
+@@ -3389,12 +3389,12 @@ void uwsgi_set_cpu_affinity() {
+ 			exit(1);
+ 		}
+ 		pos += ret;
+-#ifdef __linux__
++#if defined(__linux__) || defined(__FreeBSD_kernel__)
+ 		cpu_set_t cpuset;
+ #elif defined(__FreeBSD__)
+ 		cpuset_t cpuset;
+ #endif
+-#if defined(__linux__) || defined(__FreeBSD__)
++#if defined(__linux__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+ 		CPU_ZERO(&cpuset);
+ 		int i;
+ 		for (i = 0; i < uwsgi.cpu_affinity; i++) {
+@@ -3410,7 +3410,7 @@ void uwsgi_set_cpu_affinity() {
+ 			base_cpu++;
+ 		}
+ #endif
+-#ifdef __linux__
++#if defined(__linux__) || defined(__FreeBSD_kernel__)
+ 		if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset)) {
+ 			uwsgi_error("sched_setaffinity()");
+ 		}
+diff --git a/core/uwsgi.c b/core/uwsgi.c
+index acb8463..b34c668 100644
+--- a/core/uwsgi.c
++++ b/core/uwsgi.c
+@@ -308,7 +308,7 @@ static struct uwsgi_option uwsgi_base_options[] = {
+ #ifdef __linux__
+ 	{"unshare", required_argument, 0, "unshare() part of the processes and put it in a new namespace", uwsgi_opt_set_unshare, &uwsgi.unshare, 0},
+ #endif
+-#ifdef __FreeBSD__
++#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+ 	{"jail", required_argument, 0, "put the instance in a FreeBSD jail", uwsgi_opt_set_str, &uwsgi.jail, 0},
+ 	{"jail-ip4", required_argument, 0, "add an ipv4 address to the FreeBSD jail", uwsgi_opt_add_string_list, &uwsgi.jail_ip4, 0},
+ 	{"jail-ip6", required_argument, 0, "add an ipv6 address to the FreeBSD jail", uwsgi_opt_add_string_list, &uwsgi.jail_ip6, 0},
+diff --git a/uwsgi.h b/uwsgi.h
+index 60d5f3b..488b017 100644
+--- a/uwsgi.h
++++ b/uwsgi.h
+@@ -197,7 +197,11 @@ extern "C" {
+ #endif
+ #include <netdb.h>
+ 
+-#ifdef __FreeBSD__
++#if defined(__FreeBSD_kernel__)
++#include <bsd/unistd.h>
++#endif
++
++#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+ #include <sys/sysctl.h>
+ #include <sys/param.h>
+ #include <sys/cpuset.h>
+@@ -237,7 +241,7 @@ extern "C" {
+ #include <linux/limits.h>
+ #endif
+ 
+-#if defined(__linux) || defined(__FreeBSD__)
++#if defined(__linux) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+ #include <sys/mount.h>
+ #endif
+ 
+@@ -308,6 +312,9 @@ extern int pivot_root(const char *new_root, const char *put_old);
+ #ifdef __linux__
+ #include <sys/sendfile.h>
+ #include <sys/epoll.h>
++#elif defined(__FreeBSD_kernel__)
++#include <sys/sendfile.h>
++#include <sys/event.h>
+ #elif defined(__sun__)
+ #include <sys/sendfile.h>
+ #include <sys/devpoll.h>
+@@ -1872,7 +1879,7 @@ struct uwsgi_server {
+ #endif
+ 	char *emperor_wrapper;
+ 
+-#ifdef __FreeBSD__
++#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+ 	char *jail;
+ 	struct uwsgi_string_list *jail_ip4;
+ #ifdef AF_INET6
+diff --git a/uwsgiconfig.py b/uwsgiconfig.py
+index 860841b..a6a0ea1 100644
+--- a/uwsgiconfig.py
++++ b/uwsgiconfig.py
+@@ -674,6 +674,11 @@ class uConf(object):
+                 self.libs.append('-lexecinfo')
+                 report['execinfo'] = True
+ 
++        if uwsgi_os == 'GNU/kFreeBSD':
++            if self.has_include('execinfo.h'):
++                self.cflags.append('-DUWSGI_HAS_EXECINFO')
++                report['execinfo'] = True
++
+         if self.has_include('zlib.h'):
+             self.cflags.append('-DUWSGI_ZLIB')
+             self.libs.append('-lz')
+@@ -698,6 +703,10 @@ class uConf(object):
+             if not uwsgi_os_v.startswith('Nexenta'):
+                 self.libs.remove('-rdynamic')
+ 
++        if uwsgi_os == 'GNU/kFreeBSD':
++            if self.has_include('kvm.h'):
++                kvm_list.append('GNU/kFreeBSD')
++
+         if uwsgi_os in kvm_list:
+             self.libs.append('-lkvm')
+ 
+@@ -730,7 +739,7 @@ class uConf(object):
+                 locking_mode = 'pthread_mutex'
+             # FreeBSD umtx is still not ready for process shared locking
+             # starting from FreeBSD 9 posix semaphores can be shared between processes
+-            elif uwsgi_os == 'FreeBSD':
++            elif uwsgi_os in ('FreeBSD', 'GNU/kFreeBSD'):
+                  try:
+                      fbsd_major = int(uwsgi_os_k.split('.')[0])
+                      if fbsd_major >= 9:
+@@ -773,7 +782,7 @@ class uConf(object):
+                 if int(sun_major) >= 5:
+                     if int(sun_minor) >= 10:
+                         event_mode = 'port'
+-            elif uwsgi_os in ('Darwin', 'FreeBSD', 'OpenBSD', 'NetBSD', 'DragonFly'):
++            elif uwsgi_os in ('Darwin', 'FreeBSD', 'GNU/kFreeBSD', 'OpenBSD', 'NetBSD', 'DragonFly'):
+                 event_mode = 'kqueue'
+             elif uwsgi_os.startswith('CYGWIN') or uwsgi_os == 'GNU':
+                 event_mode = 'poll'
+@@ -816,7 +825,7 @@ class uConf(object):
+                     if int(sun_minor) >= 10:
+                         timer_mode = 'port'
+ 
+-            elif uwsgi_os in ('Darwin', 'FreeBSD', 'OpenBSD', 'NetBSD', 'DragonFly'):
++            elif uwsgi_os in ('Darwin', 'FreeBSD', 'GNU/kFreeBSD', 'OpenBSD', 'NetBSD', 'DragonFly'):
+                 timer_mode = 'kqueue'
+ 
+         if timer_mode == 'timerfd':
+@@ -843,7 +852,7 @@ class uConf(object):
+                 if int(sun_major) >= 5:
+                     if int(sun_minor) >= 10:
+                         filemonitor_mode = 'port'
+-            elif uwsgi_os in ('Darwin', 'FreeBSD', 'OpenBSD', 'NetBSD', 'DragonFly'):
++            elif uwsgi_os in ('Darwin', 'FreeBSD', 'GNU/kFreeBSD', 'OpenBSD', 'NetBSD', 'DragonFly'):
+                 filemonitor_mode = 'kqueue'
+ 
+         if filemonitor_mode == 'inotify':
+@@ -952,7 +961,7 @@ class uConf(object):
+             uwsgi_version += self.get('append_version')
+ 
+ 
+-        if uwsgi_os == 'FreeBSD' and self.has_include('jail.h'):
++        if uwsgi_os in ('FreeBSD','GNU/kFreeBSD') and self.has_include('jail.h'):
+             self.cflags.append('-DUWSGI_HAS_FREEBSD_LIBJAIL')
+             self.libs.append('-ljail')
+ 

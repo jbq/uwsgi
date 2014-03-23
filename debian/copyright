@@ -1,0 +1,48 @@
+Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: uWSGI
+Upstream-Contact: uWSGI developers and users list <uwsgi@lists.unbit.it>
+                  Roberto De Ioris <roberto@unbit.it>
+Source: http://projects.unbit.it/uwsgi/
+ git://github.com/unbit/uwsgi
+
+Files: *
+Copyright: 2009-2013, Unbit S.a.s <info@unbit.it>
+License: GPL-2+
+
+Files: apache2/mod_Ruwsgi.c
+Copyright: 2009-2010, Roger Florkowski <rflorkowski@mypublisher.com>
+           2009-2010, Unbit S.a.s <info@unbit.it>
+License: GPL-2+
+
+Files: core/rb_timers.c
+Copyright: Igor Sysoev
+ Nginx, Inc.
+ Unbit S.a.s.
+License: GPL-2+
+
+Files: core/hash.c
+Copyright: Austin Appleby
+License: GPL-2+
+ Applies only to murmur2_hash function adapted from nginx.
+
+Files: debian/*
+Copyright: 2012-2013, Janos Guljas <janos@debian.org>
+ 2010, Leonid Borisenko <leo.borisenko@gmail.com>
+License: GPL-2+
+
+License: GPL-2+
+ This package is free software; you can redistribute it and/or modify it under
+ the terms of the GNU General Public License as published by the Free Software
+ Foundation; either version 2 of the License, or (at your option) any later
+ version.
+ .
+ This package is distributed in the hope that it will be useful, but WITHOUT
+ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ details.
+ .
+ You should have received a copy of the GNU General Public License along with
+ this program. If not, see <http://www.gnu.org/licenses/>
+ .
+ On Debian systems, the complete text of the GNU General Public License version
+ 2 can be found in "/usr/share/common-licenses/GPL-2".

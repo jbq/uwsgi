@@ -1,0 +1,10 @@
+020130925~4b60307.patch
+020130925~b190744.patch
+1001_avoid_setting_RPATH.patch
+1002_fix-reload-process-name.patch
+1003_remove-php-libs.patch
+1004_fix-php-ldflags.patch
+1005_emperor-pg-fix-cflags.patch
+1006_avoid_clone_on_IA64.patch
+1007_fix_linkage.patch
+2001_verbose_compilation.patch

@@ -1,0 +1,15 @@
+Description: Remove -Wformat-security flag to fix build error
+ cc1: error: -Wformat-security ignored without -Wformat [-Werror=format-security]
+Author: Janos Guljas <janos@debian.org>
+Last-Update: 2013-07-08
+
+--- a/plugins/emperor_pg/uwsgiplugin.py
++++ b/plugins/emperor_pg/uwsgiplugin.py
+@@ -2,6 +2,7 @@
+ 
+ NAME='emperor_pg'
+ CFLAGS = os.popen('pg_config --cflags').read().rstrip().split()
++CFLAGS.remove('-Wformat-security')
+ CFLAGS.append('-I' + os.popen('pg_config --includedir').read().rstrip())
+ LDFLAGS = os.popen('pg_config --ldflags').read().rstrip().split()
+ LIBS = ['-L' + os.popen('pg_config --libdir').read().rstrip(), '-lpq']

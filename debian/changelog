@@ -1,0 +1,716 @@
+uwsgi (1.9.17.1-5build5) trusty; urgency=medium
+
+  * No-change rebuild to drop Python 3.3 support.
+
+ -- Matthias Klose <doko@ubuntu.com>  Sun, 23 Mar 2014 15:28:12 +0000
+
+uwsgi (1.9.17.1-5build4) trusty; urgency=medium
+
+  * Rebuild for Python 3.4.
+
+ -- Matthias Klose <doko@ubuntu.com>  Wed, 19 Feb 2014 20:55:38 +0100
+
+uwsgi (1.9.17.1-5build3) trusty; urgency=medium
+
+  * No change rebuild for phpapi-20121212+lfs (LFS ABI break on 32-bit
+    arches).
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 19 Feb 2014 08:24:52 +0000
+
+uwsgi (1.9.17.1-5build2) trusty; urgency=medium
+
+  * Rebuild again, the previous build was still linked against old gloox
+    on some archs.
+
+ -- Dmitry Shachnev <mitya57@ubuntu.com>  Fri, 31 Jan 2014 20:23:50 +0400
+
+uwsgi (1.9.17.1-5build1) trusty; urgency=medium
+
+  * No-change rebuild for gloox transition (LP: #1273967).
+
+ -- Dmitry Shachnev <mitya57@ubuntu.com>  Wed, 29 Jan 2014 22:50:19 +0400
+
+uwsgi (1.9.17.1-5) unstable; urgency=low
+
+  * Fix extend patch 1006 to avoid more IA64 clone() calls. Tidy DEP3
+    patch header.
+  * Fix extend patch 1007 to cover more linkage.
+  * Unfuzz patch 2001.
+
+ -- Jonas Smedegaard <dr@jones.dk>  Fri, 27 Sep 2013 01:53:54 +0200
+
+uwsgi (1.9.17.1-4) unstable; urgency=low
+
+  * Add patch 1006 to not use of clone() in emperor plugin on IA64, as
+    workaround for FTBFS. Replaces previous unsuccesful patch 1006.
+  * Add patch 1007 to fix linkage for GNU/Hurd and GNU/kFreeBSD.
+  * Unfuzz patch 2001.
+  * Stop needlessly build-depending explicitly on libbsd-dev.
+
+ -- Jonas Smedegaard <dr@jones.dk>  Thu, 26 Sep 2013 22:11:34 +0200
+
+uwsgi (1.9.17.1-3) unstable; urgency=low
+
+  * Build-depend on libzm-dev as fallback for libzmq3-dev, to ease
+    backporting.
+  * Tighten uwsgi-plugin-php to depend on current or newer
+    libphp5-embed: lack stable API/ABI.
+    Tighten to depend on same libphp5-embed when building against older
+    php5: SONAME always changed, so backports need rebuilding when php5
+    is binNMU'ed.
+  * Fix build-depend on libbsd-dev on KFreeBSD.
+  * Add patch 1006 to include sched.h with GNU extensions, hopefully
+    fixing FTBFS on IA64.
+
+ -- Jonas Smedegaard <dr@jones.dk>  Thu, 26 Sep 2013 03:38:41 +0200
+
+uwsgi (1.9.17.1-2) unstable; urgency=low
+
+  * Add patches 4b60307 and b190744 cherry-picked from upstream VCS, to
+    support KFreeBSD. Drop similar locally created patch 1006.
+  * Unfuzz patches.
+
+ -- Jonas Smedegaard <dr@jones.dk>  Wed, 25 Sep 2013 10:39:10 +0200
+
+uwsgi (1.9.17.1-1) unstable; urgency=low
+
+  [ upstream ]
+  * New release.
+
+  [ Jonas Smedegaard ]
+  * Add patch 1006 to detect KFreeBSD.
+  * Build-depend on libjail-dev and libkvm-dev on KFreeBSD.
+  * Build-depend on libzmq3-dev (not libzmq-dev), and include KFreebsd
+    (leaving out only Hurd).
+  * Fix exclude building plugin emperor_zeromq on Hurd, and no longer
+    exclude on KFreeBSD.
+
+ -- Jonas Smedegaard <dr@jones.dk>  Wed, 25 Sep 2013 04:23:38 +0200
+
+uwsgi (1.9.17-1) unstable; urgency=low
+
+  [ upstream ]
+  * New release.
+
+  [ Jonas Smedegaard ]
+  * Add patch 2001 to compile verbosely.
+  * Fix adjust uwsgi-core buildconf to autodetect presence of libzmq.
+  * Have apache2 modules only depend on api package when api is
+    resolved, to ease backporting.
+  * Update source paths for example files, and stop installing files now
+    treated as tests.
+  * Unfuzz patches.
+
+ -- Jonas Smedegaard <dr@jones.dk>  Tue, 24 Sep 2013 06:10:50 +0200
+
+uwsgi (1.9.16-2) unstable; urgency=low
+
+  * Relax build-dependency on apache2-dev to be unversioned: Declared
+    version satisfied by all releases ever made officially for Debian.
+    Add apache2-threaded-dev as fallback, to ease backporting.
+  * Tidy rules and control files:
+    + Use CDBS_DEPENDS_* for binary package relations.
+    + Resolve Python versions supported by this project (not all
+      versions supported by target host - which is semantically
+      different even though currently produces same result).
+    + Drop unused variables PYTHON_MAJOR_VER and PYTHON3_MAJOR_VER.
+    + Fix use unversioned Python binary when default version, to comply
+      with Debian Python Policy §§ 1.4.1, 1.4.2.
+    + Simplify Python module install, using CDBS python-module.mk.
+    + Convert Python 2.x module to Python 3 during build (not install).
+    + Simplify installation of plain files.
+  * Fix Vcs-Browser URL.
+    Closes: bug#723016. Thanks to Matthijs.
+  * Update patches:
+    + Merge together as patch 1001 the 2 patches that strips setting
+      LD_RUN_PATH in LDFLAGS.
+    + Prefix remaining patches with a number.
+    + Add README in patch dir documenting numbering micro-policy.
+    + Add patch 1006 to link dynamically against libperl.
+  * Fix limit build-dependency on libzmq-dev to exclude the Hurd (in
+    addition to kFreeBSD, but for different reason - libzmq-dev is not
+    in itself Linux-specific).
+
+ -- Jonas Smedegaard <dr@jones.dk>  Wed, 18 Sep 2013 18:08:16 +0200
+
+uwsgi (1.9.16-1) unstable; urgency=low
+
+  [ upstream ]
+  * New release.
+
+  [ Jonas Smedegaard ]
+  * Fix use packaging section httpd for libapache2-mod-uwsgi and
+    libapache2-mod-ruwsgi.
+  * Auto-resolve openjdk6-supported architectures.
+  * Exclude build-dependency on libzmq-dev for kfreebsd-any, and avoid
+    building module zeromq there.
+  * Unfuzz patches.
+
+ -- Jonas Smedegaard <dr@jones.dk>  Sun, 15 Sep 2013 12:43:52 +0200
+
+uwsgi (1.9.15-1) experimental; urgency=low
+
+  [ upstream ]
+  * New release.
+
+  [ Jonas Smedegaard ]
+  * Auto-resolve V8- and greenlet-supported architectures.
+    Relax arch-specific package relations:
+    + For V8 include kfreebsd-* and mipsel.
+    + For greenlet include all except ia64.
+  * Update patches:
+    + Drop patches applied upstream:
+      - 000000_01_adjust_lua_plugin_buildscript.patch
+      - alarm_speech-flags.patch
+    + Drop patch no longer applying (one example script dropped
+      upstream, another now treated as a test script):
+      - 000000_04_strip_uwsgi_shebang_from_examples.patch
+    + Unfuzz patches with shortening quilt options.
+  * Add upstream git as alternate source.
+  * Add CDBS upstream-tarball.mk snippet, to implement get-orig-source
+    target.
+  * Have git-import-orig suppress upstream .gitignore file and enable
+    signed tags.
+  * Git-ignore quilt .pc dir.
+  * Update source paths for example files, and stop installing files
+    either dropped upstream or now treated as tests.
+  * Stop building against Ruby 1.8.  Raise priority of Ruby 1.9.1 rack
+    plugin.
+    Stop build-depending on ruby1.8 or ruby1.8-dev.
+  * Add plugin package rbthreads, for Ruby 1.9 native threads.
+  * Add plugin package lua5.2, for Lua WSAPI linked with Lua 5.2.
+  * Build-depend on libcap-dev on Linux archs, for capabilities support.
+    Closes: bug#718414. Thanks to Bastian Blank.
+  * Build-depend on libmatheval-dev, for math support in routing system.
+
+ -- Jonas Smedegaard <dr@jones.dk>  Sat, 14 Sep 2013 05:51:10 +0200
+
+uwsgi (1.9.13-5) unstable; urgency=medium
+
+  * Add myself as uploader.
+  * Limit package relations tied to openjdk-7 to supported
+    architectures: mips/mipsel unsupported since openjdk-7 7u15-2.3.7-1.
+  * Avoid mips and mipsel architectures for jvm-openjdk-7 plugin,
+    unsupported since openjdk-7 7u15-2.3.7-1:
+    + Limit build-dependency and arch hints for binary packages in
+      control file.
+    + Fix resolving what plugins to build to be arch-aware.
+    Closes: bug#720262. Thanks to Adam D. Barratt.
+  * Set urgency=medium, as changes are rather limited and affects recent
+    perl migration for those using uWSGI.
+
+ -- Jonas Smedegaard <dr@jones.dk>  Fri, 13 Sep 2013 20:15:29 +0200
+
+uwsgi (1.9.13-4) unstable; urgency=low
+
+  * Remove hardcoded phpapi-20100525 dependency. (Closes: #715472)
+  * Build uwsgi-plugin-v8 and build depend on libv8-dev only on
+    amd64 armel armhf i386 architectures. (Closes: #715473)
+  * Remove apache2 and apache2-api-20120211 dependencies for
+    libapache2-mod-proxy-uwsgi, libapache2-mod-uwsgi and
+    libapache2-mod-ruwsgi. (Closes: #715485)
+  * Add ${uwsgi:apache2:Depends} substvar to reference Apache2 API version.
+  * Add ${uwsgi:php:Depends} substvar to reference PHP API version.
+  * Add libphp5-embed as a dependency for uwsgi-plugin-php.
+
+ -- Janos Guljas <janos@debian.org>  Wed, 10 Jul 2013 22:23:20 +0200
+
+uwsgi (1.9.13-3) unstable; urgency=low
+
+  * debian/uwsgi-core.install.
+    - Include alarm_speech, coroae and pem plugins into the uwsgi-core
+      package.
+
+ -- Janos Guljas <janos@debian.org>  Tue, 09 Jul 2013 02:24:32 +0200
+
+uwsgi (1.9.13-2) unstable; urgency=low
+
+  * Move plugins from binary packges to uwsgi-core package as they have
+    dependencies with priority set to required:
+    - alarm_speech
+    - coroae
+    - pam
+
+ -- Janos Guljas <janos@debian.org>  Tue, 09 Jul 2013 01:56:41 +0200
+
+uwsgi (1.9.13-1) unstable; urgency=low
+
+  * New upstream release.
+  * Update dependencies to build with Apache 2.4. (Closes: #709468)
+    - Remove apache2-threaded-dev.
+    - Add apache2-dev (>> 2.4~).
+    - Depend lbapache2-mod-proxy-uwsgi, ibapache2-mod-uwsgi and
+       libapache2-mod-ruwsgi on apache2-api-20120211.
+  * Update postinst and prerm scripts to use apache2-maintscript-helper.
+  * Add debian/patches/emperor-pg-fix-cflags.patch.
+    - Remove -Wformat-security flag to fix build error
+  * debian/uwsgi-core.docs:
+    - Remove uwsgi_API.txt.
+
+ -- Janos Guljas <janos@debian.org>  Mon, 08 Jul 2013 14:06:14 +0200
+
+uwsgi (1.9.11-1) unstable; urgency=low
+
+  * New upstream release.
+  * Upstream version does not contain minfied JavaScript files:
+    - Drop dfsg sufix from version.
+    - Remove get-orig-source target from debian/rules.
+  * Update debian/copyright:
+    - Remove references to removed files lib/rbtree.c, lib/rbtree.h and
+      nginx/ngx_http_uwsgi_module.c.
+    - Added copyrights for core/rb_timers.c and core/hash.c.
+    - Updated copyright years.
+  * debian/rules:
+    - Change UWSGICONFIG_JVM_INCPATH to fix jvm plugin build.
+  * Patch Python plugin to remove assignments to environment variable
+    LD_RUN_PATH which leads to setting RPATH in compiled binary/shared library:
+    python-plugin_remove_assignments_to_LD_RUN_PATH.patch.
+  * debian/pathces/fix-php-ldflags.patch
+    - Include php5-embed ld library path when building PHP plugin.
+  * debian/patches/remove-php-libs.patch
+    - Remove PHP libraries when building PHP plugin.
+  * Update patches to apply cleanly:
+    - fix-reload-process-name.patch
+    - fix-php-ldflags.patch
+    - 000000_02_remove_assignments_to_LD_RUN_PATH.patch
+  * Remove no longer needed patches:
+    - 110515_01_add_overriding_of_JVM_PATH_into_buildscript_of_jwsgi_plugin.patch
+    - 000000_03_strip_versions_from_jQuery_scripts_links_in_uwsgicc_templates.patch
+    - remove-pg_config_cflags-in-probepg.patch
+  * Update lintian-overrides for jwsgi and jvm plugins.
+  * New binary package uwsgi-emperor. (Closes: #660212)
+  * New binary package uwsgi-plugin-php. (Closes: #699174)
+    - New Build-Depends libphp5-embed, php5-dev, libonig-dev, libdb-dev,
+      libqdbm-dev and libbz2-dev.
+  * New binary package uwsgi-plugin-alarm-curl:
+    - New Build-Depends libcurl4-openssl-dev.
+    - Add alarm option to buildconf/uwsgi-core.ini.
+    - Set pcre option to true in: buildconf/uwsgi-core.ini.
+  * New binary package uwsgi-plugin-alarm-xmpp:
+     - New Build-Depends libgloox-dev.
+  * New binary package uwsgi-plugin-pam:
+    - New Build-Depends libpam0g-dev.
+  * New binary package uwsgi-plugin-router-access:
+    - New Build-Depends libwrap0-dev.
+    - Add routing option to buildconf/uwsgi-core.ini.
+  * New binary package uwsgi-plugin-alarm-speech:
+    - New Build-Depends libgnustep-base-dev and libgnustep-gui-dev.
+    - Add debian/patches/alarm_speech-flags.patch
+  * New binary package uwsgi-plugin-coroae:
+    - New Build-Depends libcoro-perl.
+  * New binary package uwsgi-plugin-geoip:
+    - New Build-Depends libgeoip-dev.
+  * New binary package uwsgi-plugin-v8:
+    - New Build-Depends libv8-dev.
+  * New binary package uwsgi-plugin-xslt:
+    - New Build-Depends libxslt1-dev.
+  * New binary packages libapache2-mod-proxy-uwsgi and
+    libapache2-mod-proxy-uwsgi-dbg.
+  * Add plugins to uwsgi-core package:
+    - cheaper_backlog2
+    - cheaper_busyness
+    - clock_monothonic
+    - clock_realtime
+    - corerouter
+    - emperor_amqp
+    - logfile
+    - notfound
+    - rawrouter
+    - redislog
+    - router_basicauth
+    - router_cache
+    - router_http
+    - router_memcached
+    - router_redirect
+    - router_rewrite
+    - router_uwsgi
+    - spooler
+    - ssi
+    - sslrouter
+    - stats_pusher_statsd
+    - transformation_gzip
+    - transformation_tofile
+    - transformation_toupper
+    - zergpool
+    - logfile
+  * Move plugins from binary packges to uwsgi-core package as they do not have
+    additional dependencies:
+    - admin
+    - cache
+    - carbon
+    - cgi
+    - echo
+    - emperor_zeromq
+    - fastrouter
+    - http
+    - logsocket
+    - nagios
+    - ping
+    - router_static
+    - rpc
+    - rrdtool
+    - rsyslog
+    - signal
+    - symcall
+    - syslog
+    - ugreen
+  * New plugins:
+    - uwsgi-plugin-curl-cron
+    - uwsgi-plugin-emperor-pg
+    - uwsgi-plugin-ldap
+    - uwsgi-plugin-sqlite3
+    - uwsgi-plugin-systemd-logger
+  * Remove no longer provided plugins:
+    - uwsgi-plugin-probeconnect
+    - uwsgi-plugin-probepg
+  * Remove no longer provided packages:
+    - python-uwsgicc
+    - python-django-uwsgi-admin
+  * Remove plugins which are moved to uwsgi-core package:
+    - uwsgi-plugin-admin
+    - uwsgi-plugin-cache
+    - uwsgi-plugin-carbon
+    - uwsgi-plugin-cgi
+    - uwsgi-plugin-echo
+    - uwsgi-plugin-emperor-zeromq
+    - uwsgi-plugin-fastrouter
+    - uwsgi-plugin-http
+    - uwsgi-plugin-logsocket
+    - uwsgi-plugin-nagios
+    - uwsgi-plugin-ping
+    - uwsgi-plugin-router-static
+    - uwsgi-plugin-rpc
+    - uwsgi-plugin-rrdtool
+    - uwsgi-plugin-rsyslog
+    - uwsgi-plugin-signal
+    - uwsgi-plugin-symcall
+    - uwsgi-plugin-syslog
+    - uwsgi-plugin-ugreen
+  * Changes in uwsgi-extra package:
+    - Remove no longer provided nginx and lighttpd directories.
+    - Update description.
+
+ -- Janos Guljas <janos@debian.org>  Mon, 27 May 2013 03:55:54 +0200
+
+uwsgi (1.4.4+dfsg-1) experimental; urgency=low
+
+  * New upstream release. (Closes: #698691)
+  * Remove upstream applied patches:
+    - fixed-a-leak-in-uwsgi.workers.patch
+    - fixed-magic_table-usage-in-http-and-fastrouter-plugins.patch
+    - security-check-in-the-http-router.patch
+    - threading-issue-with-uwsgi-send.patch
+    - fixed-ruby-rvm-support.patch
+    - fixed-spooler-with-chdir.patch
+    - fixed-async+threading.patch
+    - skip-headers-sending-when-no-headers-are-defined.patch
+    - fixed-logfile-inheritance.patch
+    - fixed-waitpid-usage-in-cheap-cheaper-lazy-modes.patch
+    - fixed-casting-in-wsgi-input.patch
+    - fixed-casting-in-wsgi-input-web3-pump-part.patch
+    - fixed-env-clear-in-plain-async-mode.patch
+    - allows-ugreen-with-threads.patch
+    - fix-mod_uwsgi-authenticated-but-authentication-typeless-requests.patch
+    - fixed-fastcgi-support-for-response-bigger-than-64k.patch
+    - disable-SIGSTOP-SIGTSTP-in-gateways.patch
+    - fixed-idle-mode.patch
+  * Update patches:
+    - fix-reload-process-name.patch
+  * debian/rules:
+    - Update path for example configuration files.
+    - Remove uwsgibuild.* files on clean.
+  * Update my email address.
+  * Update debian/copyright.
+  * debian/control:
+    - Remove DM-Upload-Allowed field.
+    - Raise standards version to 3.9.4.
+    - Update VCS fields to contain canonical URL forms.
+
+ -- Janos Guljas <janos@debian.org>  Sun, 27 Jan 2013 02:46:36 +0100
+
+uwsgi (1.2.3+dfsg-5) unstable; urgency=low
+
+  * debian/patches/remove-pg_config_cflags-in-probepg.patch
+    - Remove pg_config --cflags from probepg build. (Closes: #687084)
+  * Apply upstream patches:
+    - fixed-magic_table-usage-in-http-and-fastrouter-plugins.patch
+        Fixed magic_table usage in http and fastrouter plugins.
+    - security-check-in-the-http-router.patch
+        Added a security check in the http router.
+    - threading-issue-with-uwsgi-send.patch
+        Fixed a threading issue with uwsgi.send().
+    - fixed-ruby-rvm-support.patch
+        Fixed Ruby RVM support.
+    - fixed-spooler-with-chdir.patch
+        Fixed spooler with chdir.
+    - fixed-async+threading.patch
+        Fixed async+threading in python plugin.
+    - skip-headers-sending-when-no-headers-are-defined.patch
+        Skip headers sending when no headers are defined.
+    - fixed-logfile-inheritance.patch
+        Fixed logfile inheritance.
+    - fixed-waitpid-usage-in-cheap-cheaper-lazy-modes.patch
+        Fixed waitpid usage in cheap/cheaper/lazy modes.
+    - fixed-casting-in-wsgi-input.patch
+        Fixed casting in uwsgi.input.
+    - fixed-casting-in-wsgi-input-web3-pump-part.patch
+        More fixes on casting in uwsgi.input.
+    - fixed-env-clear-in-plain-async-mode.patch
+        Fixed env clear in plain async mode.
+    - allows-ugreen-with-threads.patch
+        Allows ugreen with threads.
+    - fix-mod_uwsgi-authenticated-but-authentication-typeless-requests.patch
+        Fix mod_uwsgi authenticated, but authentication typeless requests.
+    - fixed-fastcgi-support-for-response-bigger-than-64k.patch
+        Fixed fastcgi support for response bigger than 64k.
+    - disable-SIGSTOP-SIGTSTP-in-gateways.patch
+        Disable SIGSTOP/SIGTSTP in gateways.
+    - fixed-idle-mode.patch
+        Fixed idle mode.
+
+ -- Janos Guljas <janos@resenje.org>  Thu, 13 Sep 2012 19:37:31 +0200
+
+uwsgi (1.2.3+dfsg-4) unstable; urgency=low
+
+  * debian/patches/fix-reload-process-name.patch:
+     - Preserve process name on reload.
+  * Add `name` option from start-stop-daemon as the issue with
+    master process name changing on reload is fixed by patching the source.
+
+ -- Janos Guljas <janos@resenje.org>  Tue, 21 Aug 2012 23:31:59 +0200
+
+uwsgi (1.2.3+dfsg-3) unstable; urgency=low
+
+  * Remove `name` option from start-stop-daemon as master process is
+    changing its name on reloads. Thanks Andreas Motl for the patch.
+
+ -- Janos Guljas <janos@resenje.org>  Mon, 20 Aug 2012 12:32:43 +0200
+
+uwsgi (1.2.3+dfsg-2) unstable; urgency=low
+
+  * Remove uwsgi-plugin-luajit binary package. (Closes: #680132)
+     - Remove libluajit-5.1-dev from Build-Depends.
+     - Remove uwsgi-plugin-luajit from dependencies for
+       uwsgi-app-integration-plugins.
+     - Remove all occurrences of luajit plugin in debian/rules.
+  * Include upstream patch to fix a memory leak in python uwsgi.workers().
+
+ -- Janos Guljas <janos@resenje.org>  Mon, 09 Jul 2012 03:32:09 +0200
+
+uwsgi (1.2.3+dfsg-2~experimental2) UNRELEASED; urgency=low
+
+  * debian/rules:
+     - Cleanup uwsgibuild log files after the build.
+
+ -- Janos Guljas <janos@resenje.org>  Wed, 20 Jun 2012 15:39:14 +0200
+
+uwsgi (1.2.3+dfsg-2~experimental1) experimental; urgency=low
+
+  * Add support for OpenJDK 7 (Closes: #678120):
+     - Build depend on openjdk-7-jdk.
+     - Add dependencies uwsgi-plugin-jvm-openjdk-7 and
+       uwsgi-plugin-jwsgi-openjdk-7 for uwsgi-app-integration-plugins. 
+     - New binary packages uwsgi-plugin-jvm-openjdk-7 and
+       uwsgi-plugin-jwsgi-openjdk-7.
+     - Update debian/rules for new packages.
+     - Add debian/uwsgi-plugin-jvm-openjdk-7.postinst
+       debian/uwsgi-plugin-jvm-openjdk-7.prerm
+       debian/uwsgi-plugin-jwsgi-openjdk-7.install
+       debian/uwsgi-plugin-jwsgi-openjdk-7.postinst
+       debian/uwsgi-plugin-jwsgi-openjdk-7.prerm
+     - Override binary-or-shlib-defines-rpath lintian warnings for
+       uwsgi-plugin-jvm-openjdk-7 and uwsgi-plugin-jwsgi-openjdk-7.
+   * Change alternatives priprity to 35 for uwsgi-plugin-jvm-openjdk-
+     and uwsgi-plugin-jwsgi-openjdk-6.
+
+ -- Janos Guljas <janos@resenje.org>  Tue, 19 Jun 2012 16:23:06 +0200
+
+uwsgi (1.2.3+dfsg-1) unstable; urgency=low
+
+  * New upstream release.
+  * debian/uwsgi.init.d
+     - Remove spurious no-op command in init script, thanks to
+       Jean-Baptiste Quenot.
+  * Use dh_python3 for python3-uwsgidecorators. (Closes: #672193)
+  * debian/rules
+     - Include Hardening options in CFLAGS, CPPFLAGS and LDFLAGS.
+
+ -- Janos Guljas <janos@resenje.org>  Thu, 10 May 2012 17:14:22 +0200
+
+uwsgi (1.2+dfsg-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Janos Guljas <janos@resenje.org>  Mon, 30 Apr 2012 17:35:22 +0200
+
+uwsgi (1.1.2+dfsg-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Janos Guljas <janos@resenje.org>  Fri, 30 Mar 2012 23:46:24 +0200
+
+uwsgi (1.1.1+dfsg-1) unstable; urgency=low
+
+  * New upstream release (Closes: #664890).
+  * Add DM-Upload-Allowed control field.
+  * Remove debian/patches/python-3.x-fix.patch as applied upstream.
+
+ -- Janos Guljas <janos@resenje.org>  Thu, 22 Mar 2012 17:32:15 +0100
+
+uwsgi (1.1+dfsg-1) unstable; urgency=low
+
+  * New upstream release.
+  * debian/uwsgi-files/init/specific_daemon
+     - suppress stderr on do_start_specific_daemon()
+  * debian/rules
+     - adjust building python2x_plugin.so and python3x_plugin.so
+  * Add debian/patches/python-3.x-fix.patch to fix regression introduced
+    in 1.1 release.
+  * Update debian/copyright Format value. 
+  * Bump standards to 3.9.3.
+
+ -- Janos Guljas <janos@resenje.org>  Sat, 17 Mar 2012 21:39:16 +0100
+
+uwsgi (1.0.3+dfsg-1) unstable; urgency=low
+
+  * New upstream version.
+  * Adjust rack plugin LD_RUN_PATH patch.
+  * Adjust patch for uWSGI Control Center jQuery links in templates.
+  * Remove '-fno-strict-aliasing' CFLAG patch as it is implemented upstream.
+  * Remove fix indentation of uwsgidecorators_py patch as implemented upstream.
+  * Adjust init scripts to use top-bottom options order, as --inherit option
+    is not working as in earlier versions. 
+  * Update debian/copyright file.
+  * Add LSB Description field to debian/uwsgi.init.d.
+  * Set Architecture to "all" for binary package uwsgi-extra because
+    it contains no architecture dependent files.
+  * Change uwsgi description. (Closes: #640698)
+  * New binary packages:
+    - uwsgi-plugin-carbon
+    - uwsgi-plugin-graylog2
+    - uwsgi-plugin-logsocket
+    - uwsgi-plugin-probeconnect
+    - uwsgi-plugin-probepg
+    - uwsgi-plugin-rrdtool
+    - uwsgi-plugin-rsyslog
+    - uwsgi-plugin-signal
+    - uwsgi-plugin-symcall
+    - uwsgi-plugin-syslog
+  * python-uwsgidecorators:
+    - fix binary-install rule to call dh_python2
+    - remove debian/source.lintian-overrides
+  * uwsgi-plugin-jvm-openjdk-6:
+    - fix FTBFS on armel and powerpc (Closes: #656280)
+  * uwsgi-plugin-python:
+    - document issue "ImportError: No module named site" when using
+      virtualenv with Python 2.6 in README.Debian (Closes: #654333)
+  * Adjust debian/watch uversionmangle option.
+  * Repack upstram source to remove minimized jQuery and jQuery UI JavaScript
+    libraries:
+    - add get-orig-source rule to debian/rules
+    - append +dfsg to upstream version
+    - update debian/watch with dversionmangle option
+
+ -- Janos Guljas <janos@resenje.org>  Mon, 13 Feb 2012 03:43:28 +0100
+
+uwsgi (0.9.8.3-2) unstable; urgency=low
+
+  [ Leonid Borisenko ]
+  * uwsgi:
+    - change location of runtime directory of uWSGI instance
+      from: /run/uwsgi/<confname>
+      to:   /run/uwsgi/app/<confname>
+    - change location of uWSGI instance logfile
+      from: /var/log/uwsgi/<confname>.log
+      to:   /var/log/uwsgi/app/<confname>.log
+
+  [ Janos Guljas ]
+  * uwsgi-plugin-jwsgi-openjdk-6:
+    - Change UWSGICONFIG_JVM_INCPATH and UWSGICONFIG_JVM_LIBPATH.
+      (Closes: #640347)
+    - update lintian-overrides binary-or-shlib-defines-rpath
+      for new paths
+  * Add myself as maintainer. Many thanks to Leonid Borisenko who did
+    a great job of packaging and maintaining this package.
+
+ -- Janos Guljas <janos@resenje.org>  Sun, 01 Jan 2012 21:01:34 +0100
+
+uwsgi (0.9.8.3-1) unstable; urgency=low
+
+  * New upstream version (0.9.8.3)
+  * Install file CONTRIBUTORS into docs of all the packages
+  * uwsgi:
+    - move files with supplementary functions of init.d script from
+      /usr/lib/uwsgi/init to /usr/share/uwsgi/init
+    - move inherited configuration file from /usr/lib/uwsgi/conf to
+      /usr/share/uwsgi/conf
+  * uwsgi-core:
+    - add new WSGI examples
+  * uwsgi-plugin-luajit:
+    - build package for armel architecture
+  * uwsgi-plugin-python:
+    - add Suggests: python-uwsgidecorators
+  * uwsgi-plugin-python3:
+    - add Suggests: python3-uwsgidecorators
+  * python3-uwsgidecorators:
+    - extend package description with note about possible improper work of
+      uwsgidecorators module on Python 3;
+      see http://lists.unbit.it/pipermail/uwsgi/2011-July/002355.html
+
+ -- Leonid Borisenko <leo.borisenko@gmail.com>  Tue, 26 Jul 2011 18:45:32 +0300
+
+uwsgi (0.9.8.1-1) unstable; urgency=low
+
+  * New upstream version (0.9.8.1)
+  * d/patches:
+    - refresh
+      apply_GCC_no_strict_aliasing_option_only_to_python_plugin_building.patch
+    - remove obsolete (applied by upstream):
+      - fix_automagical_plugin_loading.patch
+      - fix_inherit_option_behavior.patch
+      - fix_usage_of_proto_write_in_echo_plugin.patch
+      - support_magic_variables_for_sqlite_config.patch
+  * Add python-uwsgidecorators/python3-uwsgidecorators binary packages:
+    - uwsgidecorators is a simple Python module that exports a bunch of
+      decorators to allow a more elegant approach to uWSGI API. Provided
+      decorators helps with creating of RPC functions, timers, filemonitors.
+    - d/source.lintian-overrides has been added to override false positive
+      warning of dh_python-is-obsolete
+  * d/uwsgi-plugin-greenlet-python.prerm.in:
+    - correct error in name of alternatives link group
+      (replace 'uwsgi-plugin-greenlet' with 'uwsgi-plugin-greenlet-python')
+      so as to fix process of uwsgi-plugin-greenlet-python package
+      uninstallation (and pass piuparts test)
+  * Make use of /run directory instead of /var/run:
+    - it is backward-compatible change, as /var/run is symlinked to /run
+    - /run is a new cross-distribution location for the storage of transient
+      writable files needed from system startup to shutdown, but which do not
+      require preserving across reboots. It has been appeared in Debian with
+      initscripts upgrade to 2.88dsf-13.3.
+
+ -- Leonid Borisenko <leo.borisenko@gmail.com>  Sun, 26 Jun 2011 01:01:06 +0300
+
+uwsgi (0.9.8-2) unstable; urgency=low
+
+  * Resolve package building issues on some architectures:
+    - exclude uwsgi-plugin-luajit from building on armel architecture.
+      Build-Dependency libluajit-5.1-dev doesn't available on armel,
+      bug #630814 was filed.
+    - remove Build-Dependency on libsctp-dev.
+      Build-Dependency on libsctp-dev prevents packages from building on
+      architectures kfreebsd-i386, kfreebsd-amd64, hurd-i386.
+      SCTP build option doesn't handled by uWSGI build configuration since
+      20 Oct 2010 (Mercurial changeset f1841e46cd29). So Build-Dependency on
+      libsctp-dev could be safely discarded without loss of any uWSGI
+      features.
+    - restrict set of uwsgi-plugin-greenlet-python architectures to
+      amd64, i386, mips, powerpc, s390 (where python-greenlet and
+      python-greenlet-dev packages are available).
+
+ -- Leonid Borisenko <leo.borisenko@gmail.com>  Fri, 17 Jun 2011 22:51:01 +0300
+
+uwsgi (0.9.8-1) unstable; urgency=low
+
+  * Initial release. (Closes: #582864)
+
+ -- Leonid Borisenko <leo.borisenko@gmail.com>  Mon, 13 Jun 2011 23:51:44 +0300

@@ -1,3 +1,11 @@
+uwsgi (1.9.17.1-5build6) UNRELEASED; urgency=low
+
+  * Do not depend on all versions of Python to ease cross-release builds
+  * Prevent uwsgi upgrade from restarting apps
+  * Do not build Java, Lua and v8 plugins
+
+ -- Jean-Baptiste Quenot <jbq@pmc1>  Mon, 23 Jun 2014 11:49:34 +0200
+
 uwsgi (1.9.17.1-5build5) trusty; urgency=medium
 
   * No-change rebuild to drop Python 3.3 support.

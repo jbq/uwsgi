@@ -1,0 +1,13 @@
+*.o
+*.py[co]
+*.class
+*.jar
+*~
+*.so
+
+/uwsgi
+/uwsgibuild.*
+
+/t/ring/target
+
+core/dot_h.c

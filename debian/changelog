@@ -1,4 +1,11 @@
-uwsgi (1.9.17.1-5build6) UNRELEASED; urgency=low
+uwsgi (1.9.17.1-5ubuntu1) stable; urgency=medium
+
+  * Remove alarm_speech plugin and dependency to GNUstep
+  * Build for Ubuntu 14.04
+
+ -- Jean-Baptiste Quenot <jbq@cmlid.fr>  Mon, 17 Nov 2014 13:43:31 +0100
+
+uwsgi (1.9.17.1-5build6) stable; urgency=low
 
   * Do not depend on all versions of Python to ease cross-release builds
   * Prevent uwsgi upgrade from restarting apps

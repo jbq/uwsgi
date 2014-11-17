@@ -253,7 +253,6 @@ uwsgi-core: debian/buildconf/uwsgi-plugin.ini uwsgi-core-local
 	
 	set -e; for PLUGIN_NAME in \
 			admin \
-			alarm_speech \
 			cache \
 			carbon \
 			cgi \

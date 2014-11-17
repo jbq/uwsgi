@@ -27,8 +27,6 @@ Build-Depends:
  libqdbm-dev,
  libbz2-dev,
  libwrap0-dev,
- libgnustep-gui-dev,
- libgnustep-base-dev,
  libcoro-perl,
  libgeoip-dev,
  libxslt1-dev,
